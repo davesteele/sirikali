@@ -1,0 +1,24 @@
+From: David Steele <steele@debian.org>
+Date: Wed, 1 Feb 2017 08:13:31 -0500
+Subject: Disable encfs
+
+---
+ src/sirikali.cpp | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/src/sirikali.cpp b/src/sirikali.cpp
+index 388267e..44d32e4 100644
+--- a/src/sirikali.cpp
++++ b/src/sirikali.cpp
+@@ -148,6 +148,11 @@ void sirikali::setUpApp( const QString& volume )
+ 				}else{
+ 					ac->setText( tr( "%1 Is Not Installed" ).arg( exe ) ) ;
+ 				}
++
++			}
++			else if( exe == "Encfs" ) {
++				ac->setEnabled( false ) ;
++				ac->setText( tr( "%1 Is Disabled" ).arg( exe ) ) ;
+ 			}
+ 		} ;
+ 
