@@ -2,6 +2,12 @@ From: David Steele <steele@debian.org>
 Date: Wed, 1 Feb 2017 08:13:31 -0500
 Subject: Disable encfs
 
+The status of the API for encfs is suspect, leading to
+the possibility of total breakage, or of morphing all
+entered passwords to "p".
+
+Bug-Debian: https://bugs.debian.org/853874
+
 ---
  src/sirikali.cpp | 5 +++++
  1 file changed, 5 insertions(+)
