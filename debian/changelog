@@ -1,3 +1,9 @@
+sirikali (1.3.3-1) UNRELEASED; urgency=medium
+
+  * New upstream version.
+
+ -- David Steele <steele@debian.org>  Tue, 20 Feb 2018 19:23:07 -0500
+
 sirikali (1.3.2-2) unstable; urgency=medium
 
   * Use the upstream man pages.
