@@ -26,8 +26,6 @@
 #include <QDebug>
 #include <QFile>
 
-#define DEBUG 0
-
 using cs = siritask::status ;
 
 static bool _create_folder( const QString& m )
@@ -245,7 +243,7 @@ static QString _args( const QString& exe,const siritask::options& opt,
 
 	const auto& type = opt.type ;
 
-	auto mountOptions = [ & ](){
+	auto idleTimeOut = [ & ](){
 
 		if( !opt.idleTimeout.isEmpty() ){
 
@@ -351,18 +349,6 @@ static QString _args( const QString& exe,const siritask::options& opt,
 
 	}else if( _ecryptfs( type ) ){
 
-		auto _options = []( const std::initializer_list< const char * >& e ){
-
-			QString q = "-o key=passphrase" ;
-
-			for( const auto& it : e ){
-
-				q += it ;
-			}
-
-			return q ;
-		} ;
-
 		auto mode = [ & ](){
 
 			if( opt.ro ){
@@ -379,14 +365,9 @@ static QString _args( const QString& exe,const siritask::options& opt,
 
 			if( create ){
 
-				auto s = _options( { ",ecryptfs_passthrough=n",
-						     ",ecryptfs_enable_filename_crypto=y",
-						     ",ecryptfs_key_bytes=32",
-						     ",ecryptfs_cipher=aes" } ) ;
-
-				return e.arg( exe,s,mode,configPath,cipherFolder,mountPoint ) ;
+				return e.arg( exe,opt.createOptions,mode,configPath,cipherFolder,mountPoint ) ;
 			}else{
-				return e.arg( exe,_options( {} ),mode,configPath,cipherFolder,mountPoint ) ;
+				return e.arg( exe,"-o key=passphrase",mode,configPath,cipherFolder,mountPoint ) ;
 			}
 		}() ;
 
@@ -416,20 +397,29 @@ static QString _args( const QString& exe,const siritask::options& opt,
 		//	e += " -o volname=" + utility::split( opt.plainFolder,'/' ).last() ;
 		//}
 
+		auto mountOptions = opt.mountOptions ;
+
 		auto z = [ & ]()->QString{
 
 			if( create ){
 
 				return exe + " " + opt.createOptions ;
 			}else{
-				return exe ;
+				if( mountOptions.contains( " --allow-filesystem-upgrade" ) ){
+
+					mountOptions.replace( " --allow-filesystem-upgrade","" ) ;
+
+					return exe + " --allow-filesystem-upgrade" ;
+				}else{
+					return exe ;
+				}
 			}
 		}() ;
 
-		auto opts = e.arg( z,cipherFolder,mountPoint,mountOptions,configPath,
+		auto opts = e.arg( z,cipherFolder,mountPoint,idleTimeOut,configPath,
 				   separator,type.name(),cipherFolder,type.name() ) ;
 
-		if( opt.mountOptions.isEmpty() ){
+		if( mountOptions.isEmpty() ){
 
 			if( opt.ro ){
 
@@ -440,9 +430,9 @@ static QString _args( const QString& exe,const siritask::options& opt,
 		}else{
 			if( opt.ro ){
 
-				return opts + " -o ro -o " + opt.mountOptions ;
+				return opts + " -o ro -o " + mountOptions ;
 			}else{
-				return opts + " -o rw -o " + opt.mountOptions ;
+				return opts + " -o rw -o " + mountOptions ;
 			}
 		}
 	}else{
@@ -453,7 +443,7 @@ static QString _args( const QString& exe,const siritask::options& opt,
 			e += " -o volname=" + utility::split( opt.plainFolder,'/' ).last() ;
 		}
 
-		auto opts = e.arg( exe,cipherFolder,mountPoint,mountOptions,configPath,
+		auto opts = e.arg( exe,cipherFolder,mountPoint,idleTimeOut,configPath,
 				   separator,type.name(),cipherFolder,type.name() ) ;
 
 		if( opt.mountOptions.isEmpty() ){
@@ -527,7 +517,7 @@ static siritask::cmdStatus _status( const utility::Task& r,siritask::status s,bo
 		return siritask::status::success ;
 	}
 
-	siritask::cmdStatus e = { r.exitCode(),stdOut ? r.stdOut() : r.stdError() } ;
+	siritask::cmdStatus e( r.exitCode(),stdOut ? r.stdOut() : r.stdError() ) ;
 
 	const auto msg = e.msg().toLower() ;
 
@@ -552,16 +542,36 @@ static siritask::cmdStatus _status( const utility::Task& r,siritask::status s,bo
 
 	}else if( s == siritask::status::cryfs ){
 
-		const auto& m = e.msg() ;
+		/*
+		 * Error codes are here: https://github.com/cryfs/cryfs/blob/develop/src/cryfs/ErrorCodes.h
+		 *
+		 * Valid for crfs > 0.9.8
+		 */
 
-		if( msg.contains( "password" ) ){
+		auto m = e.exitCode() ;
+
+		if( m == 11 ){
 
 			e = s ;
 
-		}else if( m.contains( "This filesystem is for CryFS" ) &&
-			  m.contains( "It has to be migrated" ) ){
+		}else if( m == 14 ){
 
 			e = siritask::status::cryfsMigrateFileSystem ;
+		}else{
+			/*
+			 * Falling back to parsing strings
+			 */
+			const auto& m = e.msg() ;
+
+			if( msg.contains( "password" ) ){
+
+				e = s ;
+
+			}else if( m.contains( "This filesystem is for CryFS" ) &&
+				  m.contains( "It has to be migrated" ) ){
+
+				e = siritask::status::cryfsMigrateFileSystem ;
+			}
 		}
 
 	}else if( s == siritask::status::encfs ){
@@ -610,24 +620,25 @@ static siritask::cmdStatus _cmd( bool create,const siritask::options& opt,
 	}else{
 		exe = utility::Task::makePath( exe ) ;
 
-		auto _run = [ & ](){
+		auto _run = [ & ]()->std::pair< QString,siritask::cmdStatus >{
 
-			#if DEBUG
-				utility::debug() << _args( exe,opt,configFilePath,create ) ;
-			#endif
-			auto s = utility::Task( _args( exe,opt,configFilePath,create ),
+			auto cmd = _args( exe,opt,configFilePath,create ) ;
+
+			auto s = utility::Task( cmd,
 						20000,
 						utility::systemEnvironment(),
 						password.toLatin1(),
 						[](){},
 						_ecryptfs( app ) ) ;
 
-			return _status( s,_status( app,status_type::exeName ),app == "encfs" ) ;
+			return { cmd,_status( s,_status( app,status_type::exeName ),app == "encfs" ) } ;
 		} ;
 
 		auto s = _run() ;
 
-		if( s == siritask::status::ecrypfsBadExePermissions ){
+		const auto& e = s.second ;
+
+		if( e == siritask::status::ecrypfsBadExePermissions ){
 
 			if( utility::enablePolkit( utility::background_thread::True ) ){
 
@@ -635,12 +646,22 @@ static siritask::cmdStatus _cmd( bool create,const siritask::options& opt,
 			}
 		}
 
-		if( s != siritask::status::success ){
+		if( e != siritask::status::success ){
 
-			utility::debug() << s.report() ;
+			if( utility::debugFullEnabled() || utility::debugEnabled() ){
+
+				utility::debug() << e.report( s.first ) ;
+			}else{
+				utility::debug() << e.report() ;
+			}
+		}else{
+			if( utility::debugFullEnabled() ){
+
+				utility::debug() << e.report( s.first ) ;
+			}
 		}
 
-		return s ;
+		return e ;
 	}
 }
 

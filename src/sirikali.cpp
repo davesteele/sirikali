@@ -164,6 +164,20 @@ void sirikali::setUpApp( const QString& volume )
 
 	m_ui->tableWidget->setMouseTracking( true ) ;
 
+	m_ui->tableWidget->setContextMenuPolicy( Qt::CustomContextMenu ) ;
+
+	connect( m_ui->tableWidget,&QTableWidget::customContextMenuRequested,[ this ]( QPoint s ){
+
+		Q_UNUSED( s ) ;
+
+		auto item = m_ui->tableWidget->currentItem() ;
+
+		if( item ){
+
+			this->showContextMenu( item,true ) ;
+		}
+	} ) ;
+
 	connect( m_ui->tableWidget,SIGNAL( currentItemChanged( QTableWidgetItem *,QTableWidgetItem * ) ),
 		 this,SLOT( slotCurrentItemChanged( QTableWidgetItem *,QTableWidgetItem * ) ) ) ;
 
@@ -229,7 +243,9 @@ void sirikali::setUpApp( const QString& volume )
 
 	this->disableAll() ;
 
-	this->updateVolumeList( mountinfo::unlockedVolumes().await() ) ;
+	auto m = mountinfo::unlockedVolumes().await() ;
+
+	this->updateVolumeList( m ) ;
 
 	if( volume.isEmpty() ) {
 
@@ -238,7 +254,7 @@ void sirikali::setUpApp( const QString& volume )
 		this->showMoungDialog( volume ) ;
 	}
 
-	this->startGUI() ;
+	this->startGUI( m ) ;
 
 	QTimer::singleShot( utility::checkForUpdateInterval(),this,SLOT( autoUpdateCheck() ) ) ;
 }
@@ -423,7 +439,7 @@ void sirikali::setLocalizationLanguage( bool translate )
 	utility::setLocalizationLanguage( translate,&m_language_menu,m_translator ) ;
 }
 
-void sirikali::startGUI()
+void sirikali::startGUI( const std::vector< volumeInfo >& m )
 {
 	if( !m_startHidden ){
 
@@ -432,7 +448,7 @@ void sirikali::startGUI()
 
 	if( utility::autoMountFavoritesOnStartUp() ){
 
-		this->autoUnlockVolumes() ;
+		this->autoUnlockVolumes( m ) ;
 	}
 }
 
@@ -470,6 +486,9 @@ void sirikali::polkitFailedWarning()
 
 void sirikali::start( const QStringList& l )
 {
+	utility::enableDebug( l.contains( "--debug" ) ) ;
+	utility::enableFullDebug( l.contains( "--debug-full" ) ) ;
+
 	m_startHidden  = l.contains( "-e" ) ;
 
 	if( !m_startHidden ){
@@ -740,13 +759,28 @@ void sirikali::autoMountFavoritesOnAvailable( QString m )
 	}
 }
 
-void sirikali::autoUnlockVolumes()
+void sirikali::autoUnlockVolumes( const std::vector< volumeInfo >& s )
 {
 	utility::volumeList e ;
 
+	auto _mounted = [ & ]( const QString& e ){
+
+		for( const auto& it : s ){
+
+			if( it.volumePath() == e ){
+
+				return true ;
+			}
+		}
+
+		return false ;
+	} ;
+
 	for( auto&& it : _readFavorites() ){
 
-		if( it.first.autoMount() ){
+		const auto& m = it.first ;
+
+		if( m.autoMount() && !_mounted( m.volumePath )){
 
 			e.emplace_back( std::move( it ) ) ;
 		}

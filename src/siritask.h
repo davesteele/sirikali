@@ -21,7 +21,7 @@
 #define ZULUMOUNTTASK_H
 
 #include "volumeinfo.h"
-#include "task.h"
+#include "task.hpp"
 #include "utility.h"
 #include "favorites.h"
 #include <QVector>
@@ -211,15 +211,25 @@ namespace siritask
 		{
 			return m_message ;
 		}
-		QString report() const
+		QString report( const QString& cmd = QString() ) const
 		{
 			auto s = QString::number( m_exitCode ) ;
 
 			QString e ;
 
-			e+= "-------------------------" ;
-			e+= QString( "\nBackend Generated Output:\nExit Code: %1" ).arg( s ) ;
-			e+= QString( "\nExit String: \"%1\"" ).arg( m_message ) ;
+			e += "-------------------------" ;
+			e += QString( "\nBackend Generated Output:\nExit Code: %1" ).arg( s ) ;
+
+			if( !m_message.isEmpty() ){
+
+				e += QString( "\nExit String: \"%1\"" ).arg( m_message ) ;
+			}
+
+			if( !cmd.isEmpty() ){
+
+				e += "\nCommand Sent To Backend: " + cmd ;
+			}
+
 			e+= "\n-------------------------" ;
 
 			return e ;

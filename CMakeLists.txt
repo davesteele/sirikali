@@ -4,9 +4,14 @@ set_property( GLOBAL PROPERTY ALLOW_DUPLICATE_CUSTOM_TARGETS ON )
 
 project( sirikali )
 
-set( PGR_VERSION "1.3.2" )
+set( PGR_VERSION "1.3.3" )
 
 add_definitions( -Wextra -Wall -pedantic )
+
+if( WIN32 )
+    include_directories( "C:\\Program Files (x86)\\WinFsp\\inc" )
+    link_directories( "C:\\Program Files (x86)\\WinFsp\\lib" )
+endif()
 
 set( CMAKE_CXX_STANDARD 14 )
 set( CMAKE_CXX_STANDARD_REQUIRED ON )
@@ -119,10 +124,8 @@ else()
 
 endif()
 
-ADD_SUBDIRECTORY( src/3rdParty/tasks )
-ADD_SUBDIRECTORY( src/3rdParty/NetworkAccessManager )
-include_directories( src/3rdParty/tasks )
-include_directories( src/3rdParty/NetworkAccessManager )
+pkg_check_modules( MCHUNGU_NETWORK mhogomchungu_network )
+pkg_check_modules( MCHUNGU_TASK mhogomchungu_task )
 
 if( INTERNAL_LXQT_WALLET )
 
@@ -169,6 +172,38 @@ else()
 	endif()
 endif()
 
+if( MCHUNGU_NETWORK_FOUND )
+
+	message( STATUS "---------------------------------------------------------------------------" )
+	message( STATUS "mhogomchungu_network library will be provided by an external library" )
+	message( STATUS "---------------------------------------------------------------------------" )
+
+	include_directories( "${MCHUNGU_NETWORK_INCLUDEDIR}" )
+	link_directories( "${MCHUNGU_NETWORK_LIBDIR}" )
+else()
+	message( STATUS "---------------------------------------------------------------------------" )
+	message( STATUS "mhogomchungu_network library will be provided by an internal library" )
+	message( STATUS "---------------------------------------------------------------------------" )
+	ADD_SUBDIRECTORY( src/3rdParty/NetworkAccessManager )
+	include_directories( src/3rdParty/NetworkAccessManager )
+endif()
+
+if( MCHUNGU_TASK_FOUND )
+
+	message( STATUS "---------------------------------------------------------------------------" )
+	message( STATUS "mhogomchungu_task library will be provided by an external library" )
+	message( STATUS "---------------------------------------------------------------------------" )
+
+	include_directories( "${MCHUNGU_TASK_INCLUDEDIR}" )
+	link_directories( "${MCHUNGU_TASK_LIBDIR}" )
+else()
+	message( STATUS "---------------------------------------------------------------------------" )
+	message( STATUS "mhogomchungu_task library will be provided by an internal library" )
+	message( STATUS "---------------------------------------------------------------------------" )
+	include_directories( src/3rdParty/tasks )
+	ADD_SUBDIRECTORY( src/3rdParty/tasks )
+endif()
+
 add_definitions( -std=c++14 )
 
 set( UI_FILES 	src/sirikali.ui
@@ -188,6 +223,7 @@ set( UI_FILES 	src/sirikali.ui
 		src/cryfscreateoptions.ui
                 src/configfileoption.ui
                 src/configoptions.ui
+                src/ecryptfscreateoptions.ui
 )
 
 set( MOC_FILES
@@ -211,6 +247,7 @@ set( MOC_FILES
 		src/mountinfo.h
 		src/securefscreateoptions.h
 		src/cryfscreateoptions.h
+		src/ecryptfscreateoptions.h
  )
 
 set( SRC 	src/dialogok.cpp
@@ -239,6 +276,8 @@ set( SRC 	src/dialogok.cpp
 		src/securefscreateoptions.cpp
 		src/cryfscreateoptions.cpp
 		src/utility2.cpp
+		src/ecryptfscreateoptions.cpp
+		src/winfsp.cpp
 )
 
 if( APPLE )
@@ -285,7 +324,11 @@ endif()
 
 link_directories( ${GCRYPT_LIBRARY_PATH} )
 
-TARGET_LINK_LIBRARIES( sirikali ${Qt5Widgets_LIBRARIES} ${Qt5Core_LIBRARIES} ${Qt5Widgets_LIBRARIES} ${Qt5Network_LIBRARIES} ${library_pwquality} ${GCRYPT_LIBRARY} lxqt-wallet tasks networkAccessManager -L${GCRYPT_LIBRARY_PATH})
+if( WIN32 )
+    TARGET_LINK_LIBRARIES( sirikali winfsp-x86 ${Qt5Widgets_LIBRARIES} ${Qt5Core_LIBRARIES} ${Qt5Widgets_LIBRARIES} ${Qt5Network_LIBRARIES} ${library_pwquality} ${GCRYPT_LIBRARY} lxqt-wallet mhogomchungu_task mhogomchungu_network -L${GCRYPT_LIBRARY_PATH})
+else()
+    TARGET_LINK_LIBRARIES( sirikali ${Qt5Widgets_LIBRARIES} ${Qt5Core_LIBRARIES} ${Qt5Widgets_LIBRARIES} ${Qt5Network_LIBRARIES} ${library_pwquality} ${GCRYPT_LIBRARY} lxqt-wallet mhogomchungu_task mhogomchungu_network -L${GCRYPT_LIBRARY_PATH})
+endif()
 
 message( STATUS "---------------------------------------------------------------------------" )
 message( STATUS "Building GUI components using Qt5" )
@@ -349,6 +392,8 @@ install( FILES translations/de_DE.qm DESTINATION ${CMAKE_INSTALL_DATADIR}/sirika
 
 install( FILES src/sirikali.1.gz DESTINATION ${CMAKE_INSTALL_DATADIR}/man/man1/ )
 install( FILES src/sirikali.pkexec.1.gz DESTINATION ${CMAKE_INSTALL_DATADIR}/man/man1/ )
+
+install( FILES src/sirikali.appdata.xml DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo/ )
 
 endif()
 

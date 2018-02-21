@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
- <class>gocryptfscreateoptions</class>
- <widget class="QDialog" name="gocryptfscreateoptions">
+ <class>ecryptfscreateoptions</class>
+ <widget class="QDialog" name="ecryptfscreateoptions">
   <property name="geometry">
    <rect>
     <x>0</x>
@@ -13,35 +13,6 @@
   <property name="windowTitle">
    <string>Select Volume Creation Options</string>
   </property>
-  <widget class="QComboBox" name="comboBox">
-   <property name="geometry">
-    <rect>
-     <x>90</x>
-     <y>50</y>
-     <width>321</width>
-     <height>29</height>
-    </rect>
-   </property>
-  </widget>
-  <widget class="QLabel" name="label">
-   <property name="geometry">
-    <rect>
-     <x>10</x>
-     <y>10</y>
-     <width>481</width>
-     <height>41</height>
-    </rect>
-   </property>
-   <property name="text">
-    <string>Cipher To Use For File Contents Encryption.</string>
-   </property>
-   <property name="alignment">
-    <set>Qt::AlignCenter</set>
-   </property>
-   <property name="wordWrap">
-    <bool>true</bool>
-   </property>
-  </widget>
   <widget class="QPushButton" name="pbOK">
    <property name="geometry">
     <rect>
@@ -154,7 +125,7 @@
      <string/>
     </property>
    </widget>
-   <widget class="QLabel" name="label_2">
+   <widget class="QLabel" name="label">
     <property name="geometry">
      <rect>
       <x>50</x>
@@ -170,7 +141,7 @@
      <bool>true</bool>
     </property>
    </widget>
-   <widget class="QLabel" name="label_4">
+   <widget class="QLabel" name="label_2">
     <property name="geometry">
      <rect>
       <x>50</x>
@@ -187,9 +158,81 @@
     </property>
    </widget>
   </widget>
+  <widget class="QGroupBox" name="groupBox_2">
+   <property name="geometry">
+    <rect>
+     <x>90</x>
+     <y>30</y>
+     <width>321</width>
+     <height>71</height>
+    </rect>
+   </property>
+   <property name="title">
+    <string/>
+   </property>
+   <widget class="QRadioButton" name="rbEnablePlainText">
+    <property name="geometry">
+     <rect>
+      <x>20</x>
+      <y>0</y>
+      <width>21</width>
+      <height>41</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+   </widget>
+   <widget class="QRadioButton" name="rbDoNotEnablePlainText">
+    <property name="geometry">
+     <rect>
+      <x>20</x>
+      <y>30</y>
+      <width>21</width>
+      <height>41</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string/>
+    </property>
+   </widget>
+   <widget class="QLabel" name="label_4">
+    <property name="geometry">
+     <rect>
+      <x>50</x>
+      <y>36</y>
+      <width>261</width>
+      <height>31</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Do Not Enable Plain Text Passthrough</string>
+    </property>
+    <property name="wordWrap">
+     <bool>true</bool>
+    </property>
+   </widget>
+   <widget class="QLabel" name="label_5">
+    <property name="geometry">
+     <rect>
+      <x>50</x>
+      <y>0</y>
+      <width>261</width>
+      <height>41</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Enable Plain Text Passthrough</string>
+    </property>
+    <property name="wordWrap">
+     <bool>true</bool>
+    </property>
+   </widget>
+  </widget>
  </widget>
  <tabstops>
-  <tabstop>comboBox</tabstop>
+  <tabstop>rbEnablePlainText</tabstop>
+  <tabstop>rbDoNotEnablePlainText</tabstop>
   <tabstop>rbEncryptFileNames</tabstop>
   <tabstop>rbDoNotEncryptFileNames</tabstop>
   <tabstop>lineEdit_2</tabstop>

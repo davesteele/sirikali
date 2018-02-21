@@ -63,6 +63,7 @@
 #include "locale_path.h"
 #include "plugins.h"
 #include "json.h"
+#include "winfsp.h"
 #include "readonlywarning.h"
 
 #include <sys/types.h>
@@ -160,6 +161,30 @@ static std::function< void() > _failed_to_connect_to_zulupolkit ;
 		return QDesktopServices::storageLocation( QDesktopServices::DataLocation ) ;
 	}
 #endif
+
+static bool _enable_debug = false ;
+
+void utility::enableDebug( bool e )
+{
+	_enable_debug = e ;
+}
+
+bool utility::debugEnabled()
+{
+	return _enable_debug ;
+}
+
+static bool _enable_full_debug = false ;
+
+void utility::enableFullDebug( bool e )
+{
+	_enable_full_debug = e ;
+}
+
+bool utility::debugFullEnabled()
+{
+	return _enable_full_debug ;
+}
 
 void utility::polkitFailedWarning( std::function< void() > e )
 {
@@ -345,32 +370,14 @@ void utility::initGlobals()
 
 	auto s = a.toLatin1() ;
 
-	chown( s.constData(),uid,uid ) ;
-	chmod( s.constData(),0700 ) ;
-#elif _WIN32
+	if( chown( s.constData(),uid,uid ) ){}
+	if( chmod( s.constData(),0700 ) ){}
+#endif
 
-	auto _read = []( const char * path,const char * key ){
-
-		DWORD dwType = REG_SZ ;
-		HKEY hKey = 0 ;
-
-		char buffer[ 4096 ] = { 0 } ;
-		auto buff = reinterpret_cast< BYTE * >( buffer ) ;
-
-		DWORD buffer_size = sizeof( buffer ) ;
-
-		if( RegOpenKey( HKEY_LOCAL_MACHINE,path,&hKey ) == ERROR_SUCCESS ){
-
-			RegQueryValueEx( hKey,key,nullptr,&dwType,buff,&buffer_size ) ;
-		}
-
-		RegCloseKey( hKey ) ;
-
-		return QByteArray( buffer,buffer_size ) ;
-	} ;
-
-	_securefsPath = _read( "SOFTWARE\\WOW6432Node\\WinFsp\\Services\\securefs","Executable" ) ;
-	_winfspPath    = _read( "SOFTWARE\\WOW6432Node\\WinFsp","InstallDir" ) ;
+#ifdef _WIN32
+	auto e = "SOFTWARE\\WOW6432Node\\WinFsp\\Services\\securefs" ;
+	_securefsPath = SiriKali::Winfsp::readRegister( e,"Executable" ) ;
+	_winfspPath = SiriKali::Winfsp::readRegister( "SOFTWARE\\WOW6432Node\\WinFsp","InstallDir" ) ;
 #endif
 }
 

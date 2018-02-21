@@ -17,16 +17,16 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "cryfscreateoptions.h"
-#include "ui_cryfscreateoptions.h"
+#include "ecryptfscreateoptions.h"
+#include "ui_ecryptfscreateoptions.h"
 
 #include "utility.h"
 #include "task.hpp"
 
-cryfscreateoptions::cryfscreateoptions( QWidget * parent,
+ecryptfscreateoptions::ecryptfscreateoptions( QWidget * parent,
 					std::function< void( const QStringList& ) > function ) :
 	QDialog( parent ),
-	m_ui( new Ui::cryfscreateoptions ),
+	m_ui( new Ui::ecryptfscreateoptions ),
 	m_function( std::move( function ) )
 {
 	m_ui->setupUi( this ) ;
@@ -39,72 +39,49 @@ cryfscreateoptions::cryfscreateoptions( QWidget * parent,
 
 	m_ui->pbConfigPath->setIcon( QIcon( ":/folder.png" ) ) ;
 
-	m_ui->lineEdit->setText( "32768" ) ;
+	m_ui->rbEncryptFileNames->setChecked( true ) ;
+	m_ui->rbDoNotEnablePlainText->setChecked( true ) ;
 
-	auto exe = utility::executableFullPath( "cryfs" ) + " --show-ciphers" ;
-
-	utility::Task::run( exe ).then( [ this ]( const utility::Task& e ){
-
-		if( e.success() ){
-
-			auto s = e.splitOutput( '\n',utility::Task::channel::stdError ) ;
-
-			if( !s.isEmpty() ){
-
-				m_ui->comboBox->addItems( s ) ;
-			}else{
-				m_ui->comboBox->setEnabled( false ) ;
-			}
-		}else{
-			m_ui->comboBox->setEnabled( false ) ;
-		}
-
-		m_ui->pbOK->setFocus() ;
-
-		this->show() ;
-	} ) ;
+	this->show() ;
 }
 
-cryfscreateoptions::~cryfscreateoptions()
+ecryptfscreateoptions::~ecryptfscreateoptions()
 {
 	delete m_ui ;
 }
 
-void cryfscreateoptions::pbSelectConfigPath()
+void ecryptfscreateoptions::pbSelectConfigPath()
 {
-	m_ui->lineEdit_2->setText( utility::configFilePath( this,"cryfs" ) ) ;
+	m_ui->lineEdit_2->setText( utility::configFilePath( this,"ecryptfs" ) ) ;
 }
 
-void cryfscreateoptions::pbOK()
+void ecryptfscreateoptions::pbOK()
 {
-	auto e = [ & ](){
+	QString e = "-o " + ecryptfscreateoptions::defaultMiniCreateOptions() ;
 
-		auto s = m_ui->lineEdit->text() ;
+	if( m_ui->rbDoNotEnablePlainText->isChecked() ){
 
-		if( s.isEmpty() ){
+		e += ",ecryptfs_passthrough=n" ;
+	}else{
+		e += ",ecryptfs_passthrough=y" ;
+	}
 
-			s = "32768" ;
-		}
+	if( m_ui->rbEncryptFileNames->isChecked() ){
 
-		auto m = m_ui->comboBox->currentText() ;
-
-		if( m.isEmpty() ){
-
-			return QString( "--blocksize %2" ).arg( s ) ;
-		}else{
-			return QString( "--cipher %1 --blocksize %2" ).arg( m,s ) ;
-		}
-	}() ;
+		e += ",ecryptfs_enable_filename_crypto=y" ;
+	}else{
+		e += ",ecryptfs_enable_filename_crypto=n" ;
+	}
 
 	this->HideUI( { e,m_ui->lineEdit_2->text() } ) ;
 }
 
-void cryfscreateoptions::pbCancel()
+void ecryptfscreateoptions::pbCancel()
 {
 	this->HideUI() ;
 }
 
-void cryfscreateoptions::HideUI( const QStringList& e )
+void ecryptfscreateoptions::HideUI( const QStringList& e )
 {
 	this->hide() ;
 
@@ -113,7 +90,7 @@ void cryfscreateoptions::HideUI( const QStringList& e )
 	this->deleteLater() ;
 }
 
-void cryfscreateoptions::closeEvent( QCloseEvent * e )
+void ecryptfscreateoptions::closeEvent( QCloseEvent * e )
 {
 	e->ignore() ;
 	this->pbCancel() ;

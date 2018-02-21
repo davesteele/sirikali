@@ -21,79 +21,26 @@
 #include "utility.h"
 #include "siritask.h"
 #include "task.hpp"
+#include "winfsp.h"
 
 #include <QMetaObject>
-#include <QStorageInfo>
+#include <QtGlobal>
 
-#ifdef WIN32
+#include <QFile>
 
-struct pollfd {
-    int   fd;         /* file descriptor */
-    short events;     /* requested events */
-    short revents;    /* returned events */
-};
-
-const static short POLLPRI = 0 ;
-
-static int poll( struct pollfd * a,int b,int c )
-{
-	Q_UNUSED( a ) ;
-	Q_UNUSED( b ) ;
-	Q_UNUSED( c ) ;
-
-	return 0 ;
-}
-
-#else
-#include <poll.h>
-#endif
+#include <vector>
+#include <utility>
 
 enum class background_thread{ True,False } ;
 
 static QStringList _getwinfspInstances( background_thread thread )
 {
-	auto exe = "\"" + utility::winFSPpath() + "\\bin\\launchctl-x86.exe\"" ;
+	if( thread == background_thread::True ){
 
-	auto cmd = [ & ]( const QString& e ){
-
-		auto s = [ & ](){
-
-			if( thread == background_thread::True ){
-
-				return utility::Task::run( exe + " " + e ).get() ;
-			}else{
-				return utility::Task::run( exe + " " + e ).await() ;
-			}
-		}() ;
-
-		return s.splitOutput( '\n',utility::Task::channel::stdOut ) ;
-	} ;
-
-	auto s = cmd( "list" ) ;
-
-	if( s.size() > 0 && s.first().startsWith( "OK" ) ){
-
-		s.removeFirst() ;
+		return SiriKali::Winfsp::ActiveInstances().commands() ;
+	}else{
+		return Task::await( [](){ return SiriKali::Winfsp::ActiveInstances().commands() ; } ) ;
 	}
-
-	QStringList m ;
-
-	for( const auto& it : s ){
-
-		auto e = utility::split( it,' ' ) ;
-
-		if( e.size() > 1 ){
-
-			auto s = cmd( "info " + e.at( 0 ) + " " + e.at( 1 ) ) ;
-
-			if( s.size() > 2 ){
-
-				m.append( s.at( 2 ) ) ;
-			}
-		}
-	}
-
-	return m ;
 }
 
 static QStringList _unlocked_volumes( background_thread thread )
