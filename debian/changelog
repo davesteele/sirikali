@@ -1,6 +1,7 @@
 sirikali (1.3.3-1) UNRELEASED; urgency=medium
 
   * New upstream version.
+  * Use the upstream appstream info.
 
  -- David Steele <steele@debian.org>  Tue, 20 Feb 2018 19:23:07 -0500
 

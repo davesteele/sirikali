@@ -6,7 +6,7 @@ Files: *
 Copyright: 2016 Francis Banyikwa <mhogomchungu@gmail.com>
 License: GPL-2+
 
-Files: debian/sirikali.appdata.xml
+Files: src/sirikali.appdata.xml
        debian/sirikali.1.ronn
 Copyright: 2016 David Steele <steele@debian.org>
 License: GPL-2+
