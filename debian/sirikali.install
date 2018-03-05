@@ -1,6 +1,2 @@
 src/sirikali.appdata.xml usr/share/metainfo
-translations/ar_SA.qm usr/share/sirikali/translations
-translations/de_DE.qm usr/share/sirikali/translations
-translations/en_US.qm usr/share/sirikali/translations
-translations/es_MX.qm usr/share/sirikali/translations
-translations/fr_FR.qm usr/share/sirikali/translations
+translations/*.qm usr/share/sirikali/translations/
