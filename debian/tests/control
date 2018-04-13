@@ -1,2 +1,2 @@
-Depends: @
-Test-Command: sirikali -p
+Depends: @, psmisc, xvfb
+Tests: testlist

@@ -1,0 +1,7 @@
+#!/bin/bash
+
+set -e
+
+(Xvfb 2>&1 &) || /bin/true
+sirikali -p 2>&1
+killall -TERM Xvfb 2>&1 || /bin/true
