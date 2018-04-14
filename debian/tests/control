@@ -1,2 +1,3 @@
-Depends: @, psmisc, xvfb
 Tests: testlist
+Depends: @, psmisc, xvfb
+Restrictions: isolation-container
