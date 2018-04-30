@@ -27,44 +27,61 @@
 #include <QList>
 #include <vector>
 #include <memory>
+#include <QProcess>
+
+#include "task.hpp"
+#include "siritask.h"
 
 namespace SiriKali{
 namespace Winfsp{
 
-struct winFsp{
+Task::process::result FspLaunchStop( const QString& className,
+				     const QString& instanceName,
+				     const QStringList& opts ) ;
 
-	QString className ;
-	QString instanceName ;
-	QString command ;
-} ;
+Task::process::result FspLaunchStart( const QString& className,
+				      const QString& instanceName,
+				      const QStringList& opts,
+				      const QByteArray& password ) ;
 
-bool FspLaunchStop( const QString& className,const QString& instanceName ) ;
+Task::process::result FspLaunchStart( const QString& exe,
+				      const QByteArray& password,
+				      const siritask::options& ) ;
 
-bool FspLaunchStart( const QString& className,const QString& instanceName,
-		     const QStringList opts,bool hasSecret ) ;
+Task::process::result FspLaunchRun( const QString& exe,
+				    const QByteArray& password,
+				    const siritask::options& ) ;
 
-class ActiveInstances
-{
-public:
-	ActiveInstances() ;
-	~ActiveInstances() ;
-	bool valid() const ;
-	const std::vector< SiriKali::Winfsp::winFsp >& values() const ;
-	QStringList commands() const ;
-private:
-	class impl ;
-	std::unique_ptr< impl > m_handle ;
-} ;
+Task::process::result FspLaunchStop( const QString& mountPath ) ;
+
+QString volumeProperties( const QString& mountPath ) ;
+
+int terminateProcess( unsigned long pid ) ;
 
 QString readRegister( const char * path,const char * key ) ;
+QString sshfsInstallDir() ;
+QString encfsInstallDir() ;
+
+std::vector< QStringList > commands() ;
+
+bool babySittingBackends() ;
+
+void updateVolumeList( std::function< void() > ) ;
 
 }
 }
 
 #if QT_VERSION < QT_VERSION_CHECK( 5,4,0 )
 
-struct QStorageInfo{
-
+/*
+ * Debian 8 uses an old version of Qt that does not have this class.
+ * Adding it here to make these old versions of Qt happy.
+ *
+ * This struct is used only in windows and MACOS version of the project and we use
+ * much recent versions of Qt on these platforms.
+ */
+struct QStorageInfo
+{
 	static QList<QStorageInfo> mountedVolumes()
 	{
 		return QList<QStorageInfo>() ;
@@ -75,6 +92,26 @@ struct QStorageInfo{
 		Q_UNUSED( e ) ;
 		return false ;
 	}
+
+	QString rootPath() const
+	{
+		return QString() ;
+	}
+
+	QByteArray device() const
+	{
+		return QByteArray() ;
+	}
+
+	QByteArray fileSystemType() const
+	{
+		return QByteArray() ;
+	}
+
+	bool isReadOnly() const
+	{
+		return false ;
+	}
 } ;
 
 #else
@@ -83,7 +120,7 @@ struct QStorageInfo{
 
 #endif
 
-#ifdef _WIN32
+#ifdef Q_OS_WIN
 
 struct pollfd {
     int   fd;         /* file descriptor */

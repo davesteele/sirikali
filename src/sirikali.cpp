@@ -1,4 +1,4 @@
-/*
+﻿/*
  *
  *  Copyright (c) 2012-2015
  *  name : Francis Banyikwa
@@ -58,7 +58,7 @@
 #include "plugins.h"
 #include "help.h"
 #include "configoptions.h"
-
+#include "winfsp.h"
 #include "json.h"
 
 static utility::volumeList _readFavorites()
@@ -111,6 +111,15 @@ configOptions::functions sirikali::configOption()
 
 void sirikali::closeApplication( int s,const QString& e )
 {
+	if( utility::platformIsWindows() && m_ui ){
+
+		if( SiriKali::Winfsp::babySittingBackends() && m_ui->tableWidget->rowCount() > 0 ){
+
+			auto m = tr( "Close All Volumes Before Quitting The Application" ) ;
+			return DialogMsg( this ).ShowUIOK( tr( "WARNING" ),m ) ;
+		}
+	}
+
 	utility::quitHelper() ;
 
 	m_exitStatus = s ;
@@ -214,11 +223,29 @@ void sirikali::setUpApp( const QString& volume )
 			}
 		} ;
 
-		_enable( m->addAction( "Cryfs" ),"Cryfs" ) ;
-		_enable( m->addAction( "Gocryptfs" ),"Gocryptfs" ) ;
-		_enable( m->addAction( "Securefs" ),"Securefs" ) ;
-		_enable( m->addAction( "Encfs" ),"Encfs" ) ;
-		_enable( m->addAction( "Ecryptfs" ),"Ecryptfs" ) ;
+		if( utility::platformIsWindows() ){
+
+			_enable( m->addAction( "Encfs" ),"Encfs" ) ;
+
+			auto ac = m->addAction( "Securefs" ) ;
+
+			_enable( ac,"Securefs" ) ;
+
+			m_warnOnMissingExecutable = !ac->isEnabled() ;
+
+		}else if( utility::platformIsOSX() ){
+
+			_enable( m->addAction( "Cryfs" ),"Cryfs" ) ;
+			_enable( m->addAction( "Gocryptfs" ),"Gocryptfs" ) ;
+			_enable( m->addAction( "Securefs" ),"Securefs" ) ;
+			_enable( m->addAction( "Encfs" ),"Encfs" ) ;
+		}else{
+			_enable( m->addAction( "Cryfs" ),"Cryfs" ) ;
+			_enable( m->addAction( "Gocryptfs" ),"Gocryptfs" ) ;
+			_enable( m->addAction( "Securefs" ),"Securefs" ) ;
+			_enable( m->addAction( "Encfs" ),"Encfs" ) ;
+			_enable( m->addAction( "Ecryptfs" ),"Ecryptfs" ) ;
+		}
 
 		return m ;
 	}() ) ;
@@ -342,9 +369,10 @@ void sirikali::setUpAppMenu()
 		return e ;
 	} ;
 
+#ifndef Q_OS_WIN
 	m->addAction( _addAction( false,false,tr( "Check For Updates" ),"Check For Updates",
 				  SLOT( updateCheck() ) ) ) ;
-
+#endif
 	m->addAction( _addAction( false,false,tr( "Unmount All" ),
 				  "Unmount All",SLOT( unMountAll() ) ) ) ;
 
@@ -444,6 +472,13 @@ void sirikali::startGUI( const std::vector< volumeInfo >& m )
 	if( !m_startHidden ){
 
 		this->raiseWindow() ;
+
+		if( m_warnOnMissingExecutable ){
+
+			auto e = tr( "Failed To Locate \"securefs\" Executable.\n\nGo To \"Menu->Settings->Editable Options->Set Executable Search Path\"\n\n And Then Set A Path To Where \"securefs\" Executable Is Located On The Computer And Restart." ) ;
+
+			DialogMsg( this ).ShowUIOK( tr( "WARNING" ),e ) ;
+		}
 	}
 
 	if( utility::autoMountFavoritesOnStartUp() ){
@@ -466,6 +501,18 @@ int sirikali::start( QApplication& e )
 	QCoreApplication::setApplicationName( "SiriKali" ) ;
 
 	const auto l = QCoreApplication::arguments() ;
+
+	for( const QString& it : l ){
+
+		if( it.startsWith( "terminateProcess-" ) ){
+
+			auto s = it ;
+
+			s.replace( "terminateProcess-","" ) ;
+
+			return SiriKali::Winfsp::terminateProcess( s.toULong() ) ;
+		}
+	}
 
 	if( utility::printVersionOrHelpInfo( l ) ){
 
@@ -1093,7 +1140,7 @@ static void _volume_properties( const QString& cmd,const std::pair<QString,QStri
 		DialogMsg( w ).ShowUIOK( QObject::tr( "ERROR" ),
 					 QObject::tr( "Failed To Find %1 Executable" ).arg( cmd ) ) ;
 	}else{
-		auto e = _volume_properties( exe,args,path ) ;
+		auto e = _volume_properties( "\"" + exe + "\"",args,path ) ;
 
 		if( e.first ){
 
@@ -1137,6 +1184,22 @@ void sirikali::gocryptfsProperties()
 	_volume_properties( "gocryptfs",{ " -info "," -config " },m_ui->tableWidget,this ) ;
 
 	this->enableAll() ;
+}
+
+void sirikali::sshfsProperties()
+{
+	auto table = m_ui->tableWidget ;
+
+	auto row = table->currentRow() ;
+
+	auto m = SiriKali::Winfsp::volumeProperties( table->item( row,1 )->text() ) ;
+
+	if( m.isEmpty() ){
+
+		DialogMsg( this ).ShowUIOK( tr( "ERROR" ),tr( "Failed To Read Volume Properties" ) ) ;
+	}else{
+		DialogMsg( this ).ShowUIInfo( tr( "INFORMATION" ),true,m ) ;
+	}
 }
 
 void sirikali::showContextMenu( QTableWidgetItem * item,bool itemClicked )
@@ -1194,6 +1257,13 @@ void sirikali::showContextMenu( QTableWidgetItem * item,bool itemClicked )
 			}else if( e == "gocryptfs" ){
 
 				return { SLOT( gocryptfsProperties() ),true } ;
+
+			}else if( e == "sshfs"){
+
+				if( utility::platformIsWindows() ){
+
+					return { SLOT( sshfsProperties() ),true } ;
+				}
 			}
 		}
 
@@ -1327,6 +1397,8 @@ void sirikali::slotTrayClicked( QSystemTrayIcon::ActivationReason e )
 			this->hide() ;
 		}else{
 			this->show() ;
+			this->raise() ;
+			this->setWindowState( Qt::WindowActive ) ;
 		}
 	}
 }
@@ -1342,7 +1414,22 @@ void sirikali::dropEvent( QDropEvent * e )
 
 	for( const auto& it : e->mimeData()->urls() ){
 
-		s.emplace_back( it.path(),QByteArray() ) ;
+		auto m = it.path() ;
+
+		if( utility::platformIsWindows() ){
+
+			while( true ){
+
+				if( m.startsWith( "/" ) ){
+
+					m = m.remove( 0,1 ) ;
+				}else{
+					break ;
+				}
+			}
+		}
+
+		s.emplace_back( std::move( m ),QByteArray() ) ;
 	}
 
 	this->mountMultipleVolumes( std::move( s ) ) ;

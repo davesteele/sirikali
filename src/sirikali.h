@@ -67,6 +67,7 @@ private slots:
 	void start( const QStringList& ) ;
 	void autoUpdateCheck( void ) ;
 	void gocryptfsProperties( void ) ;
+	void sshfsProperties( void ) ;
 	void cryfsProperties( void ) ;
 	void encfsProperties( void ) ;
 	void ecryptfsProperties( void ) ;
@@ -150,6 +151,7 @@ private:
 	bool m_startHidden ;
 	bool m_autoOpenFolderOnMount ;
 	bool m_disableEnableAll = false ;
+	bool m_warnOnMissingExecutable = false ;
 
 	QString m_sharedFolderPath ;
 	QString m_folderOpener ;

@@ -27,9 +27,6 @@
 #include <string.h>
 #include <stdio.h>
 #include <cstdio>
-#ifndef _WIN32
-#include <termios.h>
-#endif
 #include <memory>
 #include <iostream>
 
@@ -57,6 +54,7 @@
 #include <QFileInfo>
 #include <QEvent>
 #include <QKeyEvent>
+#include <QStandardPaths>
 
 #include "utility2.h"
 #include "install_prefix.h"
@@ -81,7 +79,7 @@
 
 #include "version.h"
 
-#ifdef __linux__
+#ifdef Q_OS_LINUX
 
 #include <sys/vfs.h>
 
@@ -100,7 +98,9 @@ bool utility::platformIsWindows()
 	return false ;
 }
 
-#elif __APPLE__
+#endif
+
+#ifdef Q_OS_MACOS
 
 #include <sys/param.h>
 #include <sys/mount.h>
@@ -120,7 +120,9 @@ bool utility::platformIsWindows()
     return false ;
 }
 
-#else
+#endif
+
+#ifdef Q_OS_WIN
 
 bool utility::platformIsLinux()
 {
@@ -136,11 +138,10 @@ bool utility::platformIsWindows()
 {
 	return true ;
 }
+
 #endif
 
 static QSettings * _settings ;
-static QString _securefsPath ;
-static QString _winfspPath ;
 static QByteArray _cookie ;
 static QString _polkit_socket_path ;
 
@@ -148,19 +149,10 @@ static bool _use_polkit = false ;
 
 static std::function< void() > _failed_to_connect_to_zulupolkit ;
 
-#if QT_VERSION > QT_VERSION_CHECK( 5,0,0 )
-	#include <QStandardPaths>
-	QString utility::socketPath()
-	{
-		return QStandardPaths::writableLocation( QStandardPaths::RuntimeLocation ) ;
-	}
-#else
-	#include <QDesktopServices>
-	QString utility::socketPath()
-	{
-		return QDesktopServices::storageLocation( QDesktopServices::DataLocation ) ;
-	}
-#endif
+QString utility::socketPath()
+{
+	return QStandardPaths::writableLocation( QStandardPaths::RuntimeLocation ) ;
+}
 
 static bool _enable_debug = false ;
 
@@ -270,18 +262,67 @@ void utility::Task::execute( const QString& exe,int waitTime,
 			m_stdError   = json[ "stdError" ].get< std::string >().c_str() ;
 			m_stdOut     = json[ "stdOut" ].get< std::string >().c_str() ;
 
+			utility::logCommandOutPut( { m_stdOut,m_stdError,m_exitCode,m_exitStatus,m_finished },exe ) ;
+
 		}catch( ... ){
 
 			_report_error( "SiriKali: Failed To Parse Polkit Backend Output" ) ;
 		}
 	}else{
-		auto s = ::Task::process::run( exe,{},waitTime,password,env,std::move( function  ) ).get() ;
+		auto s = ::Task::process::run( exe,{},waitTime,password,env,std::move( function ) ).get() ;
 
 		m_finished   = s.finished() ;
 		m_exitCode   = s.exit_code() ;
 		m_exitStatus = s.exit_status() ;
 		m_stdOut     = s.std_out() ;
 		m_stdError   = s.std_error() ;
+
+		utility::logCommandOutPut( s,exe ) ;
+	}
+}
+
+void utility::logCommandOutPut( const ::Task::process::result& m,const QString& exe )
+{
+	if( utility::debugFullEnabled() || utility::debugEnabled() ){
+
+		auto _trim = []( QString e ){
+
+			while( true ){
+
+				if( e.endsWith( '\n' ) ){
+
+					e.truncate( e.size() - 1 ) ;
+				}else{
+					break ;
+				}
+			}
+
+			return e ;
+		} ;
+
+		QString s = "Exit Code: %1\nExit Status: %2\nStdOut: %3\n-------\nStdError: %4\n-------\nCommand: %5\n-------\n" ;
+
+		auto e = s.arg( QString::number( m.exit_code() ),
+				QString::number( m.exit_status() ),
+				_trim( m.std_out() ),
+				_trim( m.std_error() ),
+				exe ) ;
+
+		if( utility::platformIsWindows() ){
+
+			/*
+			 * We log the output to a file on a user's desktop because output
+			 * dont seem to show up on the terminal on windows
+			 */
+
+			QFile log( QDir::homePath() + "/Desktop/SiriKali.log.txt" ) ;
+
+			log.open( QIODevice::WriteOnly | QIODevice::Append ) ;
+
+			log.write( e.toLatin1() ) ;
+		}else{
+			utility::debug() << e ;
+		}
 	}
 }
 
@@ -354,7 +395,7 @@ bool utility::enablePolkit( utility::background_thread thread )
 
 void utility::initGlobals()
 {
-#ifdef __linux__
+#ifdef Q_OS_LINUX
 	auto uid = getuid() ;
 
 	QString a = "/tmp/SiriKali-" + QString::number( uid ) ;
@@ -373,12 +414,6 @@ void utility::initGlobals()
 	if( chown( s.constData(),uid,uid ) ){}
 	if( chmod( s.constData(),0700 ) ){}
 #endif
-
-#ifdef _WIN32
-	auto e = "SOFTWARE\\WOW6432Node\\WinFsp\\Services\\securefs" ;
-	_securefsPath = SiriKali::Winfsp::readRegister( e,"Executable" ) ;
-	_winfspPath = SiriKali::Winfsp::readRegister( "SOFTWARE\\WOW6432Node\\WinFsp","InstallDir" ) ;
-#endif
 }
 
 QString utility::helperSocketPath()
@@ -393,7 +428,7 @@ bool utility::useSiriPolkit()
 
 void utility::quitHelper()
 {
-#if __linux__
+#ifdef Q_OS_LINUX
 	auto e = utility::helperSocketPath() ;
 
 	if( utility::pathExists( e ) ){
@@ -449,9 +484,12 @@ void utility::openPath( const QString& path,const QString& opener,
 
 		openPath( path,opener ).then( [ title,msg,obj ]( bool failed ){
 
-			if( failed && obj ){
+			if( !utility::platformIsWindows() ){
 
-				DialogMsg( obj ).ShowUIOK( title,msg ) ;
+				if( failed && obj ){
+
+					DialogMsg( obj ).ShowUIOK( title,msg ) ;
+				}
 			}
 		} ) ;
 	}
@@ -465,7 +503,7 @@ void utility::openPath( const QString& path,const QString& opener,
 
 		utility::fsInfo s ;
 
-#ifndef WIN32
+#ifndef Q_OS_WIN
 		struct statfs e ;
 
 		s.valid = statfs( q.toLatin1().constData(),&e ) == 0 ;
@@ -618,11 +656,35 @@ QStringList utility::executableSearchPaths()
 
 QString utility::executableSearchPaths( const QString& e )
 {
+	auto m = [](){
+
+		if( utility::platformIsWindows() ){
+
+			return ";" ;
+		}else{
+			return ":" ;
+		}
+	}() ;
+
 	if( e.isEmpty() ){
 
-		return utility::executableSearchPaths().join( ":" ) ;
+		return utility::executableSearchPaths().join( m ) ;
 	}else{
-		return e + ":" + utility::executableSearchPaths().join( ":" ) ;
+		return e + m + utility::executableSearchPaths().join( m ) ;
+	}
+}
+
+template< typename Function >
+QString _exe_path( const QString& exe,Function function )
+{
+	auto m = function() ;
+	auto e = m + "\\bin\\" + exe + ".exe" ;
+
+	if( !m.isEmpty() && utility::pathExists( e ) ){
+
+		return e ;
+	}else{
+		return QString() ;
 	}
 }
 
@@ -630,9 +692,25 @@ QString utility::executableFullPath( const QString& f )
 {
 	return utility2::executableFullPath( f,[]( const QString& e ){
 
-		if( utility::platformIsWindows() && e == "securefs" ){
+		if( utility::platformIsWindows() ){
 
-			return utility::securefsPath() ;
+			if( utility::equalsAtleastOne( e,"encfs","encfsctl" ) ){
+
+				return _exe_path( e,SiriKali::Winfsp::encfsInstallDir ) ;
+
+			}else if( e == "sshfs" ){
+
+				return _exe_path( e,SiriKali::Winfsp::sshfsInstallDir ) ;
+			}else{
+				auto m = utility::windowsExecutableSearchPath() + "/" + e + ".exe" ;
+
+				if( utility::pathExists( m ) ){
+
+					return m ;
+				}else{
+					return QString() ;
+				}
+			}
 		}else{
 			return QString() ;
 		}
@@ -890,7 +968,10 @@ void utility::setLocalizationLanguage( bool translate,QMenu * m,utility2::transl
 
 		for( auto& it : e ){
 
-			m->addAction( it.remove( ".qm" ) )->setCheckable( true ) ;
+			if( !it.startsWith( "qt_" ) ){
+
+				m->addAction( it.remove( ".qm" ) )->setCheckable( true ) ;
+			}
 		}
 
 		_selectOption( m,r ) ;
@@ -927,7 +1008,12 @@ void utility::setLocalizationLanguage( const QString& language )
 
 QString utility::localizationLanguagePath()
 {
-	return QString( TRANSLATION_PATH ) ;
+	if( utility::platformIsWindows() ){
+
+		return QDir().currentPath() + "/translations" ;
+	}else{
+		return TRANSLATION_PATH ;
+	}
 }
 
 QStringList utility::directoryList( const QString& e )
@@ -1420,9 +1506,21 @@ QString utility::runCommandOnMount()
 
 static QString _file_manager()
 {
-	auto s = utility::platformIsLinux() ? "xdg-open" : "open" ;
+	QString s ;
+	QString e ;
 
-	auto e = utility::executableFullPath( s ) ;
+	if( utility::platformIsLinux() ){
+
+		s = "xdg-open" ;
+		e = utility::executableFullPath( s ) ;
+
+	}else if( utility::platformIsOSX() ){
+
+		s = "open" ;
+		e = utility::executableFullPath( s ) ;
+	}else{
+		s = "explorer.exe" ;
+	}
 
 	if( e.isEmpty() ){
 
@@ -1495,7 +1593,40 @@ void utility::setStartMinimized( bool e )
 	_settings->setValue( "StartMinimized",e ) ;
 }
 
-#ifndef WIN32
+#ifdef Q_OS_WIN
+
+QString utility::readPassword( bool addNewLine )
+{
+	std::cout << "Password: " << std::flush ;
+
+	QString s ;
+	int e ;
+
+	int m = _readPasswordMaximumLength() ;
+
+	for( int i = 0 ; i < m ; i++ ){
+
+		e = std::getchar() ;
+
+		if( e == '\n' || e == -1 ){
+
+			break ;
+		}else{
+			s += static_cast< char >( e ) ;
+		}
+	}
+
+	if( addNewLine ){
+
+		std::cout << std::endl ;
+	}
+
+	return s ;
+}
+
+#else
+
+#include <termios.h>
 
 static inline bool _terminalEchoOff( struct termios * old,struct termios * current )
 {
@@ -1542,37 +1673,6 @@ QString utility::readPassword( bool addNewLine )
 	}
 
 	tcsetattr( 1,TCSAFLUSH,&old ) ;
-
-	if( addNewLine ){
-
-		std::cout << std::endl ;
-	}
-
-	return s ;
-}
-
-#else
-
-QString utility::readPassword( bool addNewLine )
-{
-	std::cout << "Password: " << std::flush ;
-
-	QString s ;
-	int e ;
-
-	int m = _readPasswordMaximumLength() ;
-
-	for( int i = 0 ; i < m ; i++ ){
-
-		e = std::getchar() ;
-
-		if( e == '\n' || e == -1 ){
-
-			break ;
-		}else{
-			s += static_cast< char >( e ) ;
-		}
-	}
 
 	if( addNewLine ){
 
@@ -1788,6 +1888,21 @@ QString utility::getExistingDirectory( QWidget * w,const QString& caption,const 
 	return e ;
 }
 
+QString utility::freeWindowsDriveLetter()
+{
+	char m[ 3 ] = { 'Z',':','\0' } ;
+
+	for( ; *m > 'D' ; *m -= 1 ){
+
+		if( !utility::pathExists( m ) ){
+
+			return m ;
+		}
+	}
+
+	return "Z:" ;
+}
+
 void utility::setWindowsMountPointOptions( QWidget * obj,QLineEdit * e,QPushButton * s )
 {
 	auto menu = new QMenu( obj ) ;
@@ -1796,7 +1911,7 @@ void utility::setWindowsMountPointOptions( QWidget * obj,QLineEdit * e,QPushButt
 
 	char m[ 3 ] = { 'G',':','\0' } ;
 
-	for( ; *m < 'Z' ; *m += 1 ){
+	for( ; *m <= 'Z' ; *m += 1 ){
 
 		auto ac = new QAction( m,obj ) ;
 		ac->setObjectName( m ) ;
@@ -1815,17 +1930,7 @@ void utility::setWindowsMountPointOptions( QWidget * obj,QLineEdit * e,QPushButt
 	s->setIcon( QIcon( ":/harddrive.png" ) ) ;
 }
 
-QString utility::securefsPath()
-{
-	return _securefsPath ;
-}
-
-QString utility::winFSPpath()
-{
-	return _winfspPath ;
-}
-
-int utility::winFSPpollingInterval()
+int utility::pollForUpdatesInterval()
 {
 	if( !_settings->contains( "WinFSPpollingInterval" ) ){
 
@@ -1833,4 +1938,24 @@ int utility::winFSPpollingInterval()
 	}
 
 	return _settings->value( "WinFSPpollingInterval" ).toInt() ;
+}
+
+void utility::setWindowsExecutableSearchPath( const QString& e )
+{
+	if( e.isEmpty() ){
+
+		_settings->setValue( "WindowsExecutableSearchPath",utility::homePath() + "/bin" ) ;
+	}else{
+		_settings->setValue( "WindowsExecutableSearchPath",e ) ;
+	}
+}
+
+QString utility::windowsExecutableSearchPath()
+{
+	if( !_settings->contains( "WindowsExecutableSearchPath" ) ){
+
+		_settings->setValue( "WindowsExecutableSearchPath",utility::homePath() + "/bin" ) ;
+	}
+
+	return _settings->value( "WindowsExecutableSearchPath" ).toString() ;
 }

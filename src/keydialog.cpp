@@ -140,6 +140,16 @@ void keyDialog::setUpInitUI()
 {
 	this->setUIVisible( true ) ;
 
+	if( utility::platformIsWindows() ){
+
+		/*
+		 * We are diabling this functionality on windows for now
+		 * its currently not possible to open a volume in read only mode.
+		 */
+		m_ui->checkBoxOpenReadOnly->setChecked( false ) ;
+		m_ui->checkBoxOpenReadOnly->setEnabled( false ) ;
+	}
+
 	m_reUseMountPoint = utility::reUseMountPoint() ;
 
 	m_checkBoxOriginalText = m_ui->checkBoxOpenReadOnly->text() ;
@@ -182,8 +192,10 @@ void keyDialog::setUpInitUI()
 
 		if( utility::platformIsWindows() ){
 
-			m_ui->lineEditFolderPath->setText( "Z:" ) ;
-			utility::setWindowsMountPointOptions( this,m_ui->lineEditFolderPath,m_ui->pbOpenFolderPath ) ;
+			//m_ui->lineEditFolderPath->setText( "Z:" ) ;
+			//utility::setWindowsMountPointOptions( this,m_ui->lineEditFolderPath,m_ui->pbOpenFolderPath ) ;
+			m_ui->lineEditFolderPath->setText( utility::homePath() + "/Desktop/" ) ;
+			//m_ui->pbOpenFolderPath->setIcon( QIcon( ":/folder.png" ) ) ;
 		}else{
 			m_ui->lineEditFolderPath->setText( utility::homePath() + "/" ) ;
 		}
@@ -205,10 +217,7 @@ void keyDialog::setUpInitUI()
 
 	QIcon folderIcon( ":/folder.png" ) ;
 
-	if( !utility::platformIsWindows() ){
-
-		m_ui->pbOpenFolderPath->setIcon( folderIcon ) ;
-	}
+	m_ui->pbOpenFolderPath->setIcon( folderIcon ) ;
 
 	m_ui->pbSetKeyKeyFile->setIcon( folderIcon ) ;
 
@@ -328,7 +337,7 @@ void keyDialog::setUpVolumeProperties( const volumeInfo& e,const QByteArray& key
 
 			if( m.isEmpty() ){
 
-				return "Z:" ;
+				return utility::freeWindowsDriveLetter() ;
 			}else{
 				return m ;
 			}
@@ -633,7 +642,10 @@ void keyDialog::enableAll()
 		m_ui->checkBoxVisibleKey->setEnabled( index == keyDialog::Key ) ;
 	}
 
-	m_ui->checkBoxOpenReadOnly->setEnabled( true ) ;
+	if( !utility::platformIsWindows() ){
+
+		m_ui->checkBoxOpenReadOnly->setEnabled( true ) ;
+	}
 
 	m_ui->lineEditFolderPath->setEnabled( false ) ;
 	m_ui->label_3->setEnabled( true ) ;
@@ -852,9 +864,19 @@ void keyDialog::reportErrorMessage( const siritask::cmdStatus& s )
 		 * Should not get here
 		 */
 
+	case siritask::status::volumeCreatedSuccessfully :
+
+		msg = tr( "Volume Created Successfully." ) ;
+		break ;
+
 	case siritask::status::cryfs :
 
 		msg = tr( "Failed To Unlock A Cryfs Volume.\nWrong Password Entered." ) ;
+		break;
+
+	case siritask::status::sshfs :
+
+		msg = tr( "Failed To Connect To The Remote Computer.\nWrong Password Entered." ) ;
 		break;
 
 	case siritask::status::encfs :
@@ -923,6 +945,11 @@ void keyDialog::reportErrorMessage( const siritask::cmdStatus& s )
 		msg = tr( "Failed To Create Mount Point." ) ;
 		break;
 
+	case siritask::status::failedToLoadWinfsp :
+
+		msg = tr( "Backend Could Not Load WinFsp. Please Make Sure You Have WinFsp Properly Installed" ) ;
+		break;
+
 	case siritask::status::unknown :
 
 		msg = tr( "Failed To Unlock The Volume.\nNot Supported Volume Encountered." ) ;
@@ -967,6 +994,12 @@ void keyDialog::showErrorMessage( const siritask::cmdStatus& e )
 
 void keyDialog::pbOK()
 {
+	if( m_closeGUI ){
+
+		m_cancel() ;
+		return this->HideUI() ;
+	}
+
 	m_ui->checkBoxVisibleKey->setChecked( false ) ;
 
 	this->setUIVisible( true ) ;
@@ -996,13 +1029,25 @@ void keyDialog::encryptedFolderCreate()
 		return this->enableAll() ;
 	}
 
-	m = utility::mountPath( utility::mountPathPostFix( m ) ) ;
+	if( utility::platformIsWindows() ){
 
-	if( utility::pathExists( m ) && !m_reUseMountPoint ){
+		m = utility::freeWindowsDriveLetter() ;
 
-		this->showErrorMessage( tr( "Mount Point Path Already Taken." ) ) ;
+		if( utility::pathExists( m ) ){
 
-		return this->enableAll() ;
+			this->showErrorMessage( tr( "Mount Point Path Already Taken." ) ) ;
+
+			return this->enableAll() ;
+		}
+	}else{
+		m = utility::mountPath( utility::mountPathPostFix( m ) ) ;
+
+		if( utility::pathExists( m ) && !m_reUseMountPoint ){
+
+			this->showErrorMessage( tr( "Mount Point Path Already Taken." ) ) ;
+
+			return this->enableAll() ;
+		}
 	}
 
 	if( m_key.isEmpty() ){
@@ -1040,14 +1085,19 @@ void keyDialog::encryptedFolderCreate()
 	}else{
 		this->reportErrorMessage( e ) ;
 
-		if( m_ui->cbKeyType->currentIndex() == keyDialog::Key ){
+		if( e == siritask::status::volumeCreatedSuccessfully ){
 
-			m_ui->lineEditKey->clear() ;
+			m_closeGUI = true ;
+		}else{
+			if( m_ui->cbKeyType->currentIndex() == keyDialog::Key ){
+
+				m_ui->lineEditKey->clear() ;
+			}
+
+			this->enableAll() ;
+
+			m_ui->lineEditKey->setFocus() ;
 		}
-
-		this->enableAll() ;
-
-		m_ui->lineEditKey->setFocus() ;
 	}
 }
 
@@ -1168,22 +1218,28 @@ void keyDialog::encryptedFolderMount()
 		return this->enableAll() ;
 	}
 
-	if( !utility::pathExists( m_path ) ){
+	if( !m_path.startsWith( "sshfs " ) ){
 
-		this->showErrorMessage( tr( "Encrypted Folder Appear To Not Be Present." ) ) ;
+		if( !utility::pathExists( m_path ) ){
 
-		return this->enableAll() ;
+			this->showErrorMessage( tr( "Encrypted Folder Appear To Not Be Present." ) ) ;
+
+			return this->enableAll() ;
+		}
 	}
 
-	if( m_key.isEmpty() ){
+	if( !m_path.startsWith( "sshfs " ) ){
 
-		this->showErrorMessage( tr( "Atleast One Required Field Is Empty." ) ) ;
+		if( m_key.isEmpty() ){
 
-		this->enableAll() ;
+			this->showErrorMessage( tr( "Atleast One Required Field Is Empty." ) ) ;
 
-		m_ui->lineEditKey->setFocus() ;
+			this->enableAll() ;
 
-		return ;
+			m_ui->lineEditKey->setFocus() ;
+
+			return ;
+		}
 	}
 
 	if( this->upgradingFileSystem() ){

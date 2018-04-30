@@ -65,6 +65,9 @@ configOptions::configOptions( QWidget * parent,
 		utility::autoCheck( e ) ;
 	} ) ;
 
+#ifdef Q_OS_WIN
+	m_ui->cbAutoCheckForUpdates->setEnabled( false ) ;
+#endif
 	m_ui->cbStartMinimized->setChecked( utility::startMinimized() ) ;
 
 	connect( m_ui->cbStartMinimized,&QCheckBox::toggled,[]( bool e ){
@@ -74,10 +77,11 @@ configOptions::configOptions( QWidget * parent,
 
 	if( utility::platformIsWindows() ){
 
+		m_ui->label->setText( tr( "Set Executables Search Path" ) ) ;
 		m_ui->lineEditMountPointPrefix->clear() ;
-		m_ui->lineEditMountPointPrefix->setEnabled( false ) ;
-		m_ui->pbMountPointPrefix->setEnabled( false ) ;
-		m_ui->lineEditFileManager->setEnabled( false ) ;
+		m_ui->lineEditMountPointPrefix->setEnabled( true ) ;
+		m_ui->pbMountPointPrefix->setEnabled( true ) ;
+		m_ui->lineEditMountPointPrefix->setText( utility::windowsExecutableSearchPath() ) ;
 	}else{
 		m_ui->lineEditMountPointPrefix->setText( utility::mountPath() ) ;
 	}
@@ -90,7 +94,12 @@ configOptions::configOptions( QWidget * parent,
 
 			m_ui->lineEditMountPointPrefix->setText( e ) ;
 
-			utility::setDefaultMountPointPrefix( e ) ;
+			if( utility::platformIsWindows() ){
+
+				utility::setWindowsExecutableSearchPath( e ) ;
+			}else{
+				utility::setDefaultMountPointPrefix( e ) ;
+			}
 		}
 	} ) ;
 
@@ -252,6 +261,11 @@ void configOptions::translateUI()
 
 		it.first->setText( tr( it.second ) ) ;
 	}
+
+	if( utility::platformIsWindows() ){
+
+		m_ui->label->setText( tr( "Set Executables Search Path" ) ) ;
+	}
 }
 
 void configOptions::ShowUI()
@@ -264,6 +278,13 @@ void configOptions::ShowUI()
 
 	m_ui->lineEditBeforesUnMount->setText( utility::preUnMountCommand() ) ;
 
+	if( utility::platformIsWindows() ){
+
+		m_ui->lineEditMountPointPrefix->setText( utility::windowsExecutableSearchPath() ) ;
+	}else{
+		m_ui->lineEditMountPointPrefix->setText( utility::mountPath() ) ;
+	}
+
 	this->show() ;
 }
 
@@ -275,7 +296,13 @@ void configOptions::HideUI()
 	utility::setExternalPluginExecutable( m_ui->lineEditExecutableKeySource->text() ) ;
 	utility::preUnMountCommand( m_ui->lineEditBeforesUnMount->text() ) ;
 	utility::runCommandOnMount( m_ui->lineEditAfterMountCommand->text() ) ;
-	utility::setDefaultMountPointPrefix( m_ui->lineEditMountPointPrefix->text() ) ;
+
+	if( utility::platformIsWindows() ){
+
+		utility::setWindowsExecutableSearchPath( m_ui->lineEditMountPointPrefix->text() ) ;
+	}else{
+		utility::setDefaultMountPointPrefix( m_ui->lineEditMountPointPrefix->text() ) ;
+	}
 
 	this->hide() ;
 }

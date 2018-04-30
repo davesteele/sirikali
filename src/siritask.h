@@ -133,8 +133,10 @@ namespace siritask
 		cryfs,
 		cryfsMigrateFileSystem,
 		encfs,
+		sshfs,
 		gocryptfs,
 		securefs,
+		failedToLoadWinfsp,
 		ecryptfs,
 		ecryptfsIllegalPath,
 		ecrypfsBadExePermissions,
@@ -145,13 +147,17 @@ namespace siritask
 		ecryptfs_simpleNotFound,
 		unknown,
 		failedToCreateMountPoint,
-		backendFail
+		backendFail,
+		volumeCreatedSuccessfully
 	};
 
 	class cmdStatus
 	{
 	public:
 		cmdStatus()
+		{
+		}
+		cmdStatus( siritask::status s,int c ) : m_exitCode( c ),m_status( s )
 		{
 		}
 		template< typename T = QString >

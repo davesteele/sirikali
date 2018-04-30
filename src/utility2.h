@@ -22,14 +22,96 @@
 
 #include <QStringList>
 #include <QDir>
+#include <QtGlobal>
 
 #include <functional>
+#include <memory>
+#include <type_traits>
 
 class QByteArray ;
 class QTranslator ;
 
 namespace utility2
 {
+	/*
+	 * This method takes a function that returns a resource,a function that deletes
+	 * the resource and arguments that are to be passed to the function that returns a
+	 * resource.
+	 *
+	 * example usecase of a function:
+	 *
+	 * auto woof = utility2::unique_rsc( ::fopen,::fclose,"/woof/foo/bar","r" ) ;
+	 */
+	template< typename Function,typename Deleter,typename ... Arguments >
+	auto unique_rsc( Function&& function,Deleter&& deleter,Arguments&& ... args )
+	{
+		using A = std::remove_pointer_t< std::result_of_t< Function( Arguments&& ... ) > > ;
+		using B = std::decay_t< Deleter > ;
+
+		return std::unique_ptr< A,B >( function( std::forward< Arguments >( args ) ... ),
+					       std::forward< Deleter >( deleter ) ) ;
+	}
+
+	/*
+	 * This function takes a type,a deleter for the type and optional arguments the
+	 * construction of the object of the given type need.
+	 *
+	 * example:
+	 * auto woof = unique_ptr<Foo>(foo_deleter, arg1, arg2, argN);
+	 * auto woof = unique_ptr<Foo>(foo_deleter);
+	 *
+	 * The deleter must be a function that takes a single argument of type "Foo *".
+	 */
+	template< typename Type,typename Deleter,typename ... Arguments >
+	auto unique_ptr( Deleter&& deleter,Arguments&& ... args )
+	{
+		auto create_object = []( Arguments&& ... args ){
+
+			if( sizeof ... ( args ) == 0 ){
+
+				return new Type() ;
+			}else{
+				return new Type( std::forward< Arguments >( args ) ... ) ;
+			}
+		} ;
+
+		return unique_rsc( std::move( create_object ),
+				   std::forward< Deleter >( deleter ),
+				   std::forward< Arguments >( args ) ... ) ;
+	}
+
+	/*
+	 * This function takes a type,a deleter for the type and optional arguments the
+	 * construction of the object of the given type need.
+	 *
+	 * example:
+	 * Foo *xxx = new Foo(12,"bar");
+	 * auto woof = unique_ptr(xxx, foo_deleter);
+	 *
+	 * The deleter must be a function that takes a single argument of type "Foo*".
+	 *
+	 */
+	template< typename Type,typename Deleter >
+	auto unique_ptr( Type type,Deleter&& deleter )
+	{
+		return unique_rsc( []( auto arg ){ return arg ; },
+				   std::forward< Deleter >( deleter ),type ) ;
+	}
+
+	template< typename Type,typename ... Arguments >
+	auto unique_qptr( Arguments&& ... args )
+	{
+		return utility2::unique_ptr< Type >( []( Type * e ){ e->deleteLater() ; },
+						     std::forward< Arguments >( args ) ... ) ;
+	}
+
+	template< typename Type >
+	auto unique_qptr( Type e )
+	{
+		return unique_rsc( []( auto arg ){ return arg ; },
+				   []( Type e ){ e->deleteLater() ; },e ) ;
+	}
+
 	namespace detail
 	{
 		template< typename E,typename F,typename G >
@@ -66,6 +148,9 @@ namespace utility2
 		const auto b = a + "/bin/" ;
 		const auto c = a + "/.bin/" ;
 
+#ifdef Q_OS_WIN
+		return { b.constData(),c.constData() } ;
+#else
 		return { "/usr/local/bin/",
 			"/usr/local/sbin/",
 			"/usr/bin/",
@@ -78,6 +163,7 @@ namespace utility2
 			"/opt/sbin/",
 			 b.constData(),
 			 c.constData() } ;
+#endif
 	}
 
 	static inline QString executableFullPath( const QString& f,
@@ -100,6 +186,14 @@ namespace utility2
 			e = "ecryptfs-simple" ;
 		}
 
+#ifdef Q_OS_WIN
+		if( !e.endsWith( ".exe" ) ){
+
+			e += ".exe" ;
+		}
+#else
+
+#endif
 		QString exe ;
 
 		for( const auto& it : utility2::executableSearchPaths() ){

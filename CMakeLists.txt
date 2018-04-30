@@ -4,7 +4,7 @@ set_property( GLOBAL PROPERTY ALLOW_DUPLICATE_CUSTOM_TARGETS ON )
 
 project( sirikali )
 
-set( PGR_VERSION "1.3.3" )
+set( PGR_VERSION "1.3.4" )
 
 add_definitions( -Wextra -Wall -pedantic )
 
@@ -123,6 +123,14 @@ else()
 	MESSAGE( STATUS "adding library search path of: ${GCRYPT_LIBRARY_PATH}" )
 
 endif()
+
+find_package( Qt5Widgets REQUIRED )
+find_package( Qt5Core REQUIRED )
+find_package( Qt5Network REQUIRED )
+
+message( STATUS "Found Qt5Widgets, version  ${Qt5Widgets_VERSION}" )
+message( STATUS "Found Qt5Core, version  ${Qt5Core_VERSION}" )
+message( STATUS "Found Qt5Network, version  ${Qt5Network_VERSION}" )
 
 pkg_check_modules( MCHUNGU_NETWORK mhogomchungu_network )
 pkg_check_modules( MCHUNGU_TASK mhogomchungu_task )
@@ -295,10 +303,6 @@ if( APPLE )
 	SET_SOURCE_FILES_PROPERTIES( translations/fr_FR.qm PROPERTIES MACOSX_PACKAGE_LOCATION Resources )
 endif()
 
-find_package( Qt5Widgets REQUIRED )
-find_package( Qt5Core REQUIRED )
-find_package( Qt5Network REQUIRED )
-
 set( CMAKE_INCLUDE_CURRENT_DIR ON )
 include_directories( ${Qt5Widgets_INCLUDE_DIRS} )
 include_directories( ${Qt5Network_INCLUDE_DIRS} )
@@ -316,7 +320,9 @@ if( APPLE )
 	add_executable( sirikali MACOSX_BUNDLE ${MOC} ${UI} ${SRC} ${TRAY_RC_SRCS} ${PROJECT_SOURCE_DIR}/icons/256x256/sirikali.icns )
 else()
         if( WIN32)
-                add_executable( sirikali WIN32 ${MOC} ${UI} ${SRC} ${TRAY_RC_SRCS} )
+	        add_executable( sirikali WIN32 ${MOC} ${UI} ${SRC} ${TRAY_RC_SRCS} )
+
+		#add_executable( sirikali WIN32 ${MOC} ${UI} ${SRC} ${TRAY_RC_SRCS} src/win_icon.rc )
 	else()
                 add_executable( sirikali ${MOC} ${UI} ${SRC} ${TRAY_RC_SRCS} )
 	endif()
@@ -325,7 +331,9 @@ endif()
 link_directories( ${GCRYPT_LIBRARY_PATH} )
 
 if( WIN32 )
-    TARGET_LINK_LIBRARIES( sirikali winfsp-x86 ${Qt5Widgets_LIBRARIES} ${Qt5Core_LIBRARIES} ${Qt5Widgets_LIBRARIES} ${Qt5Network_LIBRARIES} ${library_pwquality} ${GCRYPT_LIBRARY} lxqt-wallet mhogomchungu_task mhogomchungu_network -L${GCRYPT_LIBRARY_PATH})
+    #TARGET_LINK_LIBRARIES( sirikali winfsp-x86 ${Qt5Widgets_LIBRARIES} ${Qt5Core_LIBRARIES} ${Qt5Widgets_LIBRARIES} ${Qt5Network_LIBRARIES} ${library_pwquality} ${GCRYPT_LIBRARY} lxqt-wallet mhogomchungu_task mhogomchungu_network -L${GCRYPT_LIBRARY_PATH})
+    TARGET_LINK_LIBRARIES( sirikali ${Qt5Widgets_LIBRARIES} ${Qt5Core_LIBRARIES} ${Qt5Widgets_LIBRARIES} ${Qt5Network_LIBRARIES} ${library_pwquality} ${GCRYPT_LIBRARY} lxqt-wallet mhogomchungu_task mhogomchungu_network -L${GCRYPT_LIBRARY_PATH})
+
 else()
     TARGET_LINK_LIBRARIES( sirikali ${Qt5Widgets_LIBRARIES} ${Qt5Core_LIBRARIES} ${Qt5Widgets_LIBRARIES} ${Qt5Network_LIBRARIES} ${library_pwquality} ${GCRYPT_LIBRARY} lxqt-wallet mhogomchungu_task mhogomchungu_network -L${GCRYPT_LIBRARY_PATH})
 endif()

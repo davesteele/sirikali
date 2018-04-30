@@ -33,14 +33,147 @@
 
 enum class background_thread{ True,False } ;
 
-static QStringList _getwinfspInstances( background_thread thread )
+static std::vector< QStringList > _getwinfspInstances( background_thread thread )
 {
 	if( thread == background_thread::True ){
 
-		return SiriKali::Winfsp::ActiveInstances().commands() ;
+		return SiriKali::Winfsp::commands() ;
 	}else{
-		return Task::await( [](){ return SiriKali::Winfsp::ActiveInstances().commands() ; } ) ;
+		return Task::await( [](){ return SiriKali::Winfsp::commands() ; } ) ;
 	}
+}
+
+QString mountinfo::encodeMountPath( const QString& e )
+{
+	auto m = e ;
+	/*
+	 * linux's /proc/self/mountinfo makes these substitutions and we make
+	 * them too to be consistent with linux
+	 */
+	//m.replace( "\n","\\012" ) ;
+	m.replace( " ","\\040" ) ;
+	//m.replace( "\\","\\134" ) ;
+	//m.replace( "\\t","\\011" ) ;
+
+	return m ;
+}
+
+static QStringList _macox_volumes_1()
+{
+	QStringList m ;
+
+	// securefs@/Users/adam/woof on /Users/adam/.SiriKali/woof (osxfuse, nodev, nosuid, synchronous, mounted by adam)
+
+	const QString w = "%1 on %2 (%3%4)" ;
+
+	auto readOnly = []( const QStorageInfo& e ){
+
+		if( e.isReadOnly() ){
+
+			return ",read-only" ;
+		}else{
+			return "" ;
+		}
+	} ;
+
+	for( const auto& it : QStorageInfo::mountedVolumes() ){
+
+		m.append( w.arg( mountinfo::encodeMountPath( it.device() ),
+				 mountinfo::encodeMountPath( it.rootPath() ),
+				 it.fileSystemType(),
+				 readOnly( it ) ) ) ;
+	}
+
+	return m ;
+}
+
+static QStringList _macox_volumes()
+{
+	QStringList s ;
+	QString mode ;
+	QString fs ;
+	const QString w = "x x x:x x %1 %2,x - %3 %4 x" ;
+
+	for( const auto& it : _macox_volumes_1() ){
+
+		auto e = utility::split( it,' ' ) ;
+
+		if( e.size() > 2 ){
+
+			if( e.at( 3 ).contains( "read-only" ) ){
+
+				mode = "ro" ;
+			}else{
+				mode = "rw" ;
+			}
+
+			fs = "fuse." + it.mid( 0,it.indexOf( '@' ) ) ;
+
+			s.append( w.arg( e.at( 2 ),mode,fs,e.at( 0 ) ) ) ;
+		}
+	}
+
+	return s ;
+}
+
+static QStringList _windows_volumes( background_thread thread )
+{
+	QStringList s ;
+	QString mode ;
+	QString m ;
+	QString fs ;
+	const QString w = "x x x:x x %1 %2,x - %3 %4 x" ;
+
+	auto path = []( QString e ){
+
+		if( e.startsWith( '\"' ) ){
+
+			e.remove( 0,1 ) ;
+		}
+
+		if( e.endsWith( '\"' ) ){
+
+			e.truncate( e.size() - 1 ) ;
+		}
+
+		return e ;
+	} ;
+
+	for( const QStringList& e : _getwinfspInstances( thread ) ){
+
+		if( e.contains( "ro" ) ){
+
+			mode = "ro" ;
+		}else{
+			mode = "rw" ;
+		}
+
+		for( const auto& it : e ){
+
+			if( it.startsWith( "subtype=" ) ){
+
+				m = it ;
+				m.replace( "subtype=","" ) ;
+			}
+		}
+
+		fs = "fuse." + m ;
+
+		if( m == "encfs" ){
+
+			m += "@" + path( e.at( 1 ) ) ;
+
+			auto q = e.at( 2 ) ;
+
+			s.append( w.arg( path( q ),mode,fs,m ) ) ;
+		}else{
+			m += "@" + path( e.at( e.size() - 2 ) ) ;
+
+			s.append( w.arg( path( e.last() ),mode,fs,m ) ) ;
+		}
+	}
+
+	return s ;
 }
 
 static QStringList _unlocked_volumes( background_thread thread )
@@ -51,84 +184,9 @@ static QStringList _unlocked_volumes( background_thread thread )
 
 	}else if( utility::platformIsOSX() ){
 
-		QStringList s ;
-		QString mode ;
-		QString fs ;
-		const QString w = "x x x:x x %1 %2,x - %3 %4 x" ;
-
-		auto e = [ & ](){
-
-			if( thread == background_thread::True ){
-
-				return utility::Task::run( "mount" ).get().splitOutput( '\n' ) ;
-			}else{
-				return utility::Task::run( "mount" ).await().splitOutput( '\n' ) ;
-			}
-		}() ;
-
-		for( const auto& it : e ){
-
-			auto e = utility::split( it,' ' ) ;
-
-			if( e.size() > 2 ){
-
-				if( e.contains( ", read-only," ) ){
-
-					mode = "ro" ;
-				}else{
-					mode = "rw" ;
-				}
-
-				fs = "fuse." + it.mid( 0,it.indexOf( '@' ) ) ;
-
-				s.append( w.arg( e.at( 2 ),mode,fs,e.at( 0 ) ) ) ;
-			}
-		}
-
-		return s ;
+		return _macox_volumes() ;
 	}else{
-		QStringList s ;
-		QString mode ;
-		QString fs ;
-		const QString w = "x x x:x x %1 %2,x - %3 %4 x" ;
-
-		auto path = []( QString e ){
-
-			if( e.startsWith( '\"' ) ){
-
-				e.remove( 0,1 ) ;
-			}
-
-			if( e.endsWith( '\"' ) ){
-
-				e.truncate( e.size() - 1 ) ;
-			}
-
-			return e ;
-		} ;
-
-		for( const auto& it : _getwinfspInstances( thread ) ){
-
-			auto e = utility::split( it,' ' ) ;
-
-			if( e.size() > 6 ){
-
-				if( e.contains( " -o ro " ) ){
-
-					mode = "ro" ;
-				}else{
-					mode = "rw" ;
-				}
-
-				auto m = e.at( 5 ).mid( 11 ) ;
-
-				fs = "fuse." + m ;
-
-				s.append( w.arg( path( e.last() ),mode,fs,m + "@" + path( e.at( 6 ) ) ) ) ;
-			}
-		}
-
-		return s ;
+		return _windows_volumes( thread ) ;
 	}
 }
 
@@ -146,7 +204,7 @@ mountinfo::mountinfo( QObject * parent,bool e,std::function< void() >&& quit ) :
 
 		this->osxMonitor() ;
 	}else{
-		this->windowsMonitor();
+		this->windowsMonitor() ;
 	}
 }
 
@@ -245,7 +303,8 @@ Task::future< std::vector< volumeInfo > >& mountinfo::unlockedVolumes()
 				if( utility::startsWithAtLeastOne( cf,"encfs@",
 								   "cryfs@",
 								   "securefs@",
-								   "gocryptfs@" ) ){
+								   "gocryptfs@",
+								   "sshfs@" ) ){
 
 					info.volumePath = _decode( cf,true ) ;
 
@@ -374,40 +433,13 @@ void mountinfo::linuxMonitor()
 	e.then( std::move( m_quit ) ) ;
 }
 
-void mountinfo::osxMonitor()
-{
-	m_stop = [ this ](){ m_process.terminate() ; } ;
-
-	auto s = static_cast< void( QProcess::* )( int ) >( &QProcess::finished ) ;
-
-	connect( &m_process,s,[ this ]( int e ){ Q_UNUSED( e ) ; m_quit() ; } ) ;
-
-	connect( &m_process,&QProcess::readyReadStandardOutput,[ & ](){
-
-		/*
-		 * Clear the buffer,not sure if its necessary.
-		 *
-		 * In the future,we will examine the output and call this->updateVolume()
-		 * only when we notice a volumes was mounted/unmounted to reduce noise if
-		 * "diskutil activity" is too chatty.
-		 */
-		m_process.readAllStandardOutput() ;
-
-		this->updateVolume() ;
-	} ) ;
-
-	m_process.setProcessChannelMode( QProcess::MergedChannels ) ;
-
-	m_process.start( "diskutil activity" ) ;
-}
-
-void mountinfo::windowsMonitor()
+void mountinfo::pollForUpdates()
 {
 	m_exit = false ;
 
 	m_stop = [ this ](){ m_exit = true ; } ;
 
-	auto interval = utility::winFSPpollingInterval() ;
+	auto interval = utility::pollForUpdatesInterval() ;
 
 	Task::run( [ &,interval ](){
 
@@ -434,4 +466,40 @@ void mountinfo::windowsMonitor()
 		}
 
 	} ).then( std::move( m_quit ) ) ;
+}
+
+void mountinfo::osxMonitor()
+{
+#if 1
+	this->pollForUpdates() ;
+#else
+	m_stop = [ this ](){ m_process.terminate() ; } ;
+
+	auto s = static_cast< void( QProcess::* )( int,QProcess::ExitStatus ) >( &QProcess::finished ) ;
+
+	connect( &m_process,s,[ this ]( int e,QProcess::ExitStatus s ){ Q_UNUSED( e ) ; Q_UNUSED( s ) ; m_quit() ; } ) ;
+
+	connect( &m_process,&QProcess::readyReadStandardOutput,[ & ](){
+
+		/*
+		 * Clear the buffer,not sure if its necessary.
+		 *
+		 * In the future,we will examine the output and call this->updateVolume()
+		 * only when we notice a volumes was mounted/unmounted to reduce noise if
+		 * "diskutil activity" is too chatty.
+		 */
+		m_process.readAllStandardOutput() ;
+
+		this->updateVolume() ;
+	} ) ;
+
+	m_process.setProcessChannelMode( QProcess::MergedChannels ) ;
+
+	m_process.start( "diskutil activity" ) ;
+#endif
+}
+
+void mountinfo::windowsMonitor()
+{
+	SiriKali::Winfsp::updateVolumeList( [ this ]{ this->updateVolume() ; } ) ;
 }
