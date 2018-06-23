@@ -8,6 +8,7 @@ Build-Depends: debhelper (>= 9),
                libgcrypt20-dev,
                libsecret-1-dev,
                qtbase5-dev,
+               qtbase5-dev-tools,
                chrpath,
                bzip2,
 Standards-Version: 4.1.3
