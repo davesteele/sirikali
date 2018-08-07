@@ -78,27 +78,89 @@ int poll( struct pollfd * a,int b,int c )
 	return 0 ;
 }
 
-QString SiriKali::Winfsp::readRegister( const char * path,const char * key )
-{
-	DWORD dwType = REG_SZ ;
-	HKEY hKey = 0 ;
+class regOpenKey{
+public:
+	regOpenKey( const char * subKey,HKEY hkey = HKEY_LOCAL_MACHINE )
+	{
+		HKEY m ;
+		REGSAM wow64 = KEY_QUERY_VALUE | KEY_WOW64_64KEY ;
+		REGSAM wow32 = KEY_QUERY_VALUE | KEY_WOW64_32KEY ;
 
-	std::array< char,4096 > buffer ;
+		if( this->success( RegOpenKeyExA,hkey,subKey,0,wow64,&m ) ){
 
-	std::fill( buffer.begin(),buffer.end(),'\0' ) ;
+			m_hkey = m ;
 
-	auto buff = reinterpret_cast< BYTE * >( buffer.data() ) ;
+		}else if( this->success( RegOpenKeyExA,hkey,subKey,0,wow32,&m ) ){
 
-	auto buffer_size = static_cast< DWORD >( buffer.size() ) ;
-
-	if( RegOpenKey( HKEY_LOCAL_MACHINE,path,&hKey ) == ERROR_SUCCESS ){
-
-		RegQueryValueEx( hKey,key,nullptr,&dwType,buff,&buffer_size ) ;
+			m_hkey = m ;
+		}else{
+			m_hkey = nullptr ;
+		}
 	}
+	regOpenKey( const regOpenKey& ) = delete ;
+	regOpenKey& operator=( const regOpenKey& ) = delete ;
+	regOpenKey( regOpenKey&& other )
+	{
+		this->closeKey() ;
+		m_hkey = other.m_hkey ;
+		other.m_hkey = nullptr ;
+	}
+	regOpenKey& operator=( regOpenKey&& other )
+	{
+		this->closeKey() ;
+		m_hkey = other.m_hkey ;
+		other.m_hkey = nullptr ;
+		return *this ;
+	}
+	operator bool()
+	{
+		return m_hkey != nullptr ;
+	}
+	QByteArray getValue( const char * key )
+	{
+		if( m_hkey != nullptr ){
 
-	RegCloseKey( hKey ) ;
+			DWORD dwType = REG_SZ ;
 
-	return QByteArray( buffer.data(),buffer_size ) ;
+			std::array< char,4096 > buffer ;
+
+			std::fill( buffer.begin(),buffer.end(),'\0' ) ;
+
+			auto e = reinterpret_cast< BYTE * >( buffer.data() ) ;
+			auto m = static_cast< DWORD >( buffer.size() ) ;
+
+			if( this->success( RegQueryValueEx,m_hkey,key,nullptr,&dwType,e,&m ) ){
+
+				return { buffer.data(),static_cast< int >( m ) } ;
+			}
+		}
+
+		return {} ;
+	}
+	HKEY handle()
+	{
+		return m_hkey ;
+	}
+	~regOpenKey()
+	{
+		this->closeKey() ;
+	}
+private:
+	template< typename Function,typename ... Args >
+	bool success( Function&& function,Args&& ... args )
+	{
+		return function( std::forward< Args >( args ) ... ) == ERROR_SUCCESS ;
+	}
+	void closeKey()
+	{
+		RegCloseKey( m_hkey ) ;
+	}
+	HKEY m_hkey ;
+};
+
+static QString _readRegistry( const char * subKey,const char * key )
+{
+	return regOpenKey( subKey ).getValue( key ) ;
 }
 
 // SiriKali took below code from "https://stackoverflow.com/questions/813086/can-i-send-a-ctrl-c-sigint-to-an-application-on-windows"
@@ -155,26 +217,28 @@ int SiriKali::Winfsp::terminateProcess( unsigned long pid )
 	return 1 ;
 }
 
-QString SiriKali::Winfsp::readRegister( const char * path,const char * key )
+static QString _readRegistry( const char * subKey,const char * key )
 {
-	Q_UNUSED( path ) ;
+	Q_UNUSED( subKey ) ;
 	Q_UNUSED( key ) ;
-
 	return QString() ;
 }
 
 #endif
 
+QString SiriKali::Winfsp::securefsInstallDir()
+{
+	return _readRegistry( "SOFTWARE\\SECUREFS","InstallDir" ) ;
+}
+
 QString SiriKali::Winfsp::sshfsInstallDir()
 {
-	auto e = "SOFTWARE\\WOW6432Node\\SSHFS-Win" ;
-	return SiriKali::Winfsp::readRegister( e,"InstallDir" ) ;
+	return _readRegistry( "SOFTWARE\\SSHFS-Win","InstallDir" ) ;
 }
 
 QString SiriKali::Winfsp::encfsInstallDir()
 {
-	auto e = "SOFTWARE\\WOW6432Node\\ENCFS" ;
-	return SiriKali::Winfsp::readRegister( e,"InstallDir" ) ;
+	return _readRegistry( "SOFTWARE\\ENCFS","InstallDir" ) ;
 }
 
 SiriKali::Winfsp::ActiveInstances::ActiveInstances() :
@@ -268,17 +332,17 @@ static QProcessEnvironment _update_environment( const QString& type )
 {
 	auto env = utility::systemEnvironment() ;
 
-	auto m = env.value( "PATH" ) + ";" ;
+	auto m = env.value( "PATH" ) ;
 
 	auto path = [ & ](){
 
 		if( type == "sshfs" ){
 
-			return m + SiriKali::Winfsp::sshfsInstallDir() + "\\bin" ;
+			return SiriKali::Winfsp::sshfsInstallDir() + "\\bin;" + m ;
 
 		}else if( type == "encfs" ){
 
-			return m + SiriKali::Winfsp::encfsInstallDir() + "\\bin" ;
+			return SiriKali::Winfsp::encfsInstallDir() + "\\bin;" + m ;
 		}else{
 			return m ;
 		}
@@ -297,6 +361,10 @@ Task::process::result SiriKali::Winfsp::FspLaunchRun( const QString& exe,
 
 		if( utility::createFolder( opts.cipherFolder ) ){
 
+			/*
+			 * We are intentionally not logging here because the called function
+			 * below will do the logging.
+			 */
 			return SiriKali::Winfsp::FspLaunchStart( exe,password,opts ) ;
 		}else{
 			auto s = Task::process::result( "","Failed To Create Cipher Folder",1,0,true ) ;
@@ -376,11 +444,11 @@ Task::process::result SiriKali::Winfsp::manageInstances::removeInstance( const Q
 
 		auto m = [ & ](){
 
-			if( cmd.endsWith( "encfs.exe" ) ){
+			if( utility::endsWithAtLeastOne( cmd,"encfs.exe","sshfs.exe" ) ){
 
 				return e->arguments().at( 2 ) ;
 			}else{
-				return e->arguments().last() ;
+				return e->arguments().at( e->arguments().size() - 3 ) ;
 			}
 		}() ;
 
@@ -409,7 +477,7 @@ Task::process::result SiriKali::Winfsp::manageInstances::removeInstance( const Q
 				exe = "taskkill /F /PID " + QString::number( e->processId() ) ;
 			}
 
-			auto m = Task::process::run( exe,{},-1,"",env ).await() ;
+			auto m = Task::process::run( exe,{},-1,"",env ).get() ;
 
 			auto s = [ & ](){
 
@@ -442,7 +510,7 @@ QString SiriKali::Winfsp::manageInstances::volumeProperties( const QString& moun
 
 		auto args = m_instances[ i ]->arguments() ;
 
-		if( mountPath == args.last() ){
+		if( mountPath == args.at( 2 ) ){
 
 			auto m = QObject::tr( "Mount Options:\n\n" ) ;
 
@@ -507,10 +575,10 @@ Task::process::result SiriKali::Winfsp::FspLaunchStop( const QString& m )
 
 		return _winfspInstances().removeInstance( m ) ;
 	}else{
-		QStringList e ;
-		e.append( m ) ;
+		QString x ;
+		QStringList y( m ) ;
 
-		return SiriKali::Winfsp::FspLaunchStop( QString(),QString(),e ) ;
+		return SiriKali::Winfsp::FspLaunchStop( x,x,y ) ;
 	}
 }
 

@@ -116,12 +116,44 @@ static QStringList _macox_volumes()
 	return s ;
 }
 
+enum class mountOptions{ mode,subtype } ;
+static QString _mountOption( const QStringList& e,mountOptions component )
+{
+	if( e.isEmpty() ){
+
+		return QString() ;
+	}
+
+	const QString& s = e.last() ;
+
+	if( component == mountOptions::mode ){
+
+		return s.mid( 0,2 ) ;
+	}
+
+	if( component == mountOptions::subtype ){
+
+		for( const auto& it : utility::split( s,',' ) ){
+
+			if( it.startsWith( "subtype=" ) ){
+
+				return it.mid( 8 ) ;
+			}
+		}
+	}
+
+	return QString() ;
+}
+
 static QStringList _windows_volumes( background_thread thread )
 {
 	QStringList s ;
 	QString mode ;
 	QString m ;
 	QString fs ;
+	int mountPathIndex ;
+	int cipherPathIndex ;
+
 	const QString w = "x x x:x x %1 %2,x - %3 %4 x" ;
 
 	auto path = []( QString e ){
@@ -141,36 +173,24 @@ static QStringList _windows_volumes( background_thread thread )
 
 	for( const QStringList& e : _getwinfspInstances( thread ) ){
 
-		if( e.contains( "ro" ) ){
-
-			mode = "ro" ;
-		}else{
-			mode = "rw" ;
-		}
-
-		for( const auto& it : e ){
-
-			if( it.startsWith( "subtype=" ) ){
-
-				m = it ;
-				m.replace( "subtype=","" ) ;
-			}
-		}
+		mode = _mountOption( e,mountOptions::mode ) ;
+		m    = _mountOption( e,mountOptions::subtype ) ;
 
 		fs = "fuse." + m ;
 
-		if( m == "encfs" ){
+		if( e.at( 1 ) == "--config" ){
 
-			m += "@" + path( e.at( 1 ) ) ;
-
-			auto q = e.at( 2 ) ;
-
-			s.append( w.arg( path( q ),mode,fs,m ) ) ;
+			cipherPathIndex = 3 ;
+			mountPathIndex = 4 ;
 		}else{
-			m += "@" + path( e.at( e.size() - 2 ) ) ;
-
-			s.append( w.arg( path( e.last() ),mode,fs,m ) ) ;
+			cipherPathIndex = 1 ;
+			mountPathIndex = 2 ;
 		}
+
+		m += "@" + path( e.at( cipherPathIndex ) ) ;
+
+		s.append( w.arg( path( e.at( mountPathIndex ) ),mode,fs,m ) ) ;
+
 	}
 
 	return s ;
@@ -309,7 +329,7 @@ Task::future< std::vector< volumeInfo > >& mountinfo::unlockedVolumes()
 					info.volumePath = _decode( cf,true ) ;
 
 				}else if( utility::equalsAtleastOne( fs,"fuse.gocryptfs",
-								     "ecryptfs" ) ){
+								     "ecryptfs","fuse.sshfs" ) ){
 
 					info.volumePath = _decode( cf,false ) ;
 				}else{
@@ -399,38 +419,26 @@ void mountinfo::announceEvents( bool s )
 
 void mountinfo::linuxMonitor()
 {
-	class mountEvent
-	{
-	public:
-		mountEvent() : m_handle( "/proc/self/mountinfo" )
-		{
-			m_handle.open( QIODevice::ReadOnly ) ;
-			m_monitor.fd     = m_handle.handle() ;
-			m_monitor.events = POLLPRI ;
-		}
-		operator bool()
-		{
-			poll( &m_monitor,1,-1 ) ;
-			return true ;
-		}
-	private:
-		QFile m_handle ;
-		struct pollfd m_monitor ;
-	} ;
+	auto s = std::addressof( Task::run( [ this ](){
 
-	auto& e = Task::run( [ & ](){
+		QFile s( "/proc/self/mountinfo" ) ;
+		struct pollfd m ;
 
-		mountEvent event ;
+		s.open( QIODevice::ReadOnly ) ;
+		m.fd     = s.handle() ;
+		m.events = POLLPRI ;
 
-		while( event ){
+		while( true ){
+
+			poll( &m,1,-1 ) ;
 
 			this->updateVolume() ;
 		}
-	} ) ;
+	} ) ) ;
 
-	m_stop = [ s = std::addressof( e ) ](){ s->first_thread()->terminate() ; } ;
+	m_stop = [ s ](){ s->first_thread()->terminate() ; } ;
 
-	e.then( std::move( m_quit ) ) ;
+	s->then( std::move( m_quit ) ) ;
 }
 
 void mountinfo::pollForUpdates()

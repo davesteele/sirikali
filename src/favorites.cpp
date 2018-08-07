@@ -32,7 +32,7 @@
 #include "dialogmsg.h"
 #include "tablewidget.h"
 
-favorites::favorites( QWidget * parent ) : QDialog( parent ),
+favorites::favorites( QWidget * parent,favorites::type type ) : QDialog( parent ),
 	m_ui( new Ui::favorites )
 {
 	m_ui->setupUi( this ) ;
@@ -48,6 +48,8 @@ favorites::favorites( QWidget * parent ) : QDialog( parent ),
 	connect( m_ui->tableWidget,SIGNAL( itemClicked( QTableWidgetItem * ) ),this,
 		SLOT( itemClicked( QTableWidgetItem * ) ) ) ;
 
+	m_ui->pbAdd->setObjectName( "Add" ) ;
+
 	if( utility::platformIsWindows() ){
 
 		utility::setWindowsMountPointOptions( this,m_ui->lineEditMountPath,m_ui->pbMountPointPath ) ;
@@ -61,8 +63,6 @@ favorites::favorites( QWidget * parent ) : QDialog( parent ),
 
 	m_ui->pbFolderPath->setIcon( QIcon( ":/sirikali.png" ) ) ;
 	m_ui->pbConfigFilePath->setIcon( QIcon( ":/file.png" ) ) ;
-
-	//m_ui->lineEditEncryptedFolderPath->setEnabled( false ) ;
 
 	m_ui->cbAutoMount->setChecked( false ) ;
 
@@ -94,7 +94,7 @@ favorites::favorites( QWidget * parent ) : QDialog( parent ),
 
 	this->checkFavoritesConsistency() ;
 
-	this->ShowUI() ;
+	this->ShowUI( type ) ;
 }
 
 void favorites::checkFavoritesConsistency()
@@ -157,7 +157,7 @@ void favorites::shortcutPressed()
 	this->itemClicked( m_ui->tableWidget->currentItem(),false ) ;
 }
 
-void favorites::ShowUI()
+void favorites::ShowUI( favorites::type type )
 {
 	m_ui->tableWidget->setColumnWidth( 0,285 ) ;
 	m_ui->tableWidget->setColumnWidth( 1,285 ) ;
@@ -185,6 +185,16 @@ void favorites::ShowUI()
 	}else{
 		m_ui->lineEditMountPath->clear() ;
 	}
+
+	if( type == favorites::type::sshfs ){
+
+		m_ui->lineEditIdleTimeOut->setEnabled( false ) ;
+		m_ui->lineEditMountOptions->setText( "idmap=user" ) ;
+		m_ui->lineEditEncryptedFolderPath->setText( "sshfs " ) ;
+		m_ui->labelName ->setText( tr( "Remote Ssh Server Address\n(Example: sshfs woof@bar.foo:/remote/path)" ) ) ;
+		m_ui->labelCofigFilePath->setText( tr( "SSH_AUTH_SOCK Socket Path (Optional)" ) ) ;
+	}
+
 	m_ui->tableWidget->setFocus() ;
 
 	this->show() ;
@@ -208,6 +218,24 @@ void favorites::itemClicked( QTableWidgetItem * current )
 	this->itemClicked( current,true ) ;
 }
 
+void favorites::edit()
+{
+	auto table = m_ui->tableWidget ;
+	m_editRow = table->currentRow() ;
+
+	if( m_editRow >= 0 ){
+
+		m_ui->pbAdd->setText( tr( "Edit" ) ) ;
+		m_ui->pbAdd->setObjectName( "Edit" ) ;
+		m_ui->lineEditEncryptedFolderPath->setText( table->item( m_editRow,0 )->text() ) ;
+		m_ui->lineEditMountPath->setText( table->item( m_editRow,1 )->text() ) ;
+		m_ui->cbAutoMount->setChecked( table->item( m_editRow,2 )->text() == "true" ) ;
+		m_ui->lineEditConfigFilePath->setText( table->item( m_editRow,3 )->text() ) ;
+		m_ui->lineEditIdleTimeOut->setText( table->item( m_editRow,4 )->text() ) ;
+		m_ui->lineEditMountOptions->setText( table->item( m_editRow,5 )->text() ) ;
+	}
+}
+
 void favorites::itemClicked( QTableWidgetItem * current,bool clicked )
 {
 	if( current ){
@@ -218,6 +246,11 @@ void favorites::itemClicked( QTableWidgetItem * current,bool clicked )
 
 		connect( m.addAction( tr( "Toggle AutoMount" ) ),
 			 SIGNAL( triggered() ),this,SLOT( toggleAutoMount() ) ) ;
+
+		m.addSeparator() ;
+
+		connect( m.addAction( tr( "Edit" ) ),
+			 SIGNAL( triggered() ),this,SLOT( edit() ) ) ;
 
 		m.addSeparator() ;
 
@@ -357,9 +390,28 @@ void favorites::add()
 			  _option( m_ui->lineEditIdleTimeOut->text() ),
 			  _option( mOpts ) } ;
 
-	this->addEntries( e ) ;
+	if( m_ui->pbAdd->objectName() == "Edit" ){
 
-	utility::addToFavorite( e ) ;
+		m_ui->pbAdd->setText( tr( "Add" ) ) ;
+		m_ui->pbAdd->setObjectName( "Add" ) ;
+
+		auto f = this->getEntry( m_editRow ) ;
+
+		utility::replaceFavorite( f,e ) ;
+
+		tablewidget::updateRow( m_ui->tableWidget,e,m_editRow ) ;
+
+		m_ui->lineEditEncryptedFolderPath->clear() ;
+		m_ui->lineEditMountPath->clear() ;
+		m_ui->lineEditConfigFilePath->clear() ;
+		m_ui->lineEditIdleTimeOut->clear() ;
+		m_ui->lineEditMountOptions->clear() ;
+	}else{
+		tablewidget::addRow( m_ui->tableWidget,e ) ;
+		utility::addToFavorite( e ) ;
+		m_ui->lineEditEncryptedFolderPath->clear() ;
+		m_ui->lineEditMountPath->clear() ;
+	}
 
 	m_ui->lineEditEncryptedFolderPath->clear() ;
 	m_ui->lineEditMountPath->clear() ;

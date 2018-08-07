@@ -72,6 +72,53 @@ class QEvent ;
 namespace utility
 {
 	using volumeList = std::vector< std::pair< favorites::entry,QByteArray > > ;
+
+	template< typename T >
+	class result
+	{
+	public:
+		result()
+		{
+		}
+		result( T e ) : m_valid( true ),m_value( std::move( e ) )
+		{
+		}
+		T * operator->()
+		{
+			return &m_value ;
+		}
+		const T * operator->() const
+		{
+			return &m_value ;
+		}
+		T& operator*()
+		{
+			return m_value ;
+		}
+		const T& operator*() const
+		{
+			return m_value ;
+		}
+		operator bool()
+		{
+			return m_valid ;
+		}
+		bool has_value() const
+		{
+			return m_valid ;
+		}
+		T& value()
+		{
+			return m_value ;
+		}
+		const T& value() const
+		{
+			return m_value ;
+		}
+	private:
+		bool m_valid = false ;
+		T m_value ;
+	} ;
 }
 
 namespace utility
@@ -353,6 +400,14 @@ namespace utility
 	QString applicationName( void ) ;
 	bool eventFilter( QObject * gui,QObject * watched,QEvent * event,std::function< void() > ) ;
 	void licenseInfo( QWidget * ) ;
+
+	::Task::future< utility::result< QString > >& backEndInstalledVersion( const QString& backend ) ;
+
+	::Task::future< utility::result< bool > >& backendIsLessThan( const QString& backend,
+								      const QString& version ) ;
+
+	::Task::future< utility::result< bool > >& backendIsGreaterOrEqualTo( const QString& backend,
+									      const QString& version ) ;
 
 	void setLocalizationLanguage( bool translate,QMenu * m,utility2::translator& ) ;
 	void languageMenu( QMenu *,QAction *,utility2::translator& ) ;

@@ -152,19 +152,18 @@ public:
 		}
 	};
 
-	static favorites& instance( QWidget * parent = 0 )
+	enum class type{ sshfs,others } ;
+	static favorites& instance( QWidget * parent = 0,favorites::type type = favorites::type::others )
 	{
-		return *( new favorites( parent ) ) ;
+		return *( new favorites( parent,type ) ) ;
 	}
-	explicit favorites( QWidget * parent = 0 ) ;
+	explicit favorites( QWidget * parent = 0,favorites::type type = favorites::type::others ) ;
 	~favorites() ;
 signals:
 	void ShowPartitionUI( void ) ;
-public slots:
-	void ShowUI( void ) ;
-	void HideUI( void ) ;
 private slots:
 	void toggleAutoMount( void ) ;
+	void edit( void ) ;
 	void configPath( void ) ;
 	void removeEntryFromFavoriteList( void ) ;
 	void add( void ) ;
@@ -177,6 +176,8 @@ private slots:
 	void shortcutPressed( void ) ;
 	void devicePathTextChange( QString ) ;
 private:
+	void ShowUI( favorites::type ) ;
+	void HideUI( void ) ;
 	void checkFavoritesConsistency() ;
 	favorites::entry getEntry( int ) ;
 	QString getExistingFile( const QString& ) ;
@@ -186,6 +187,7 @@ private:
 	void addEntries( const QStringList& ) ;
 	Ui::favorites * m_ui ;
 	QWidget * m_parentWidget ;
+	int m_editRow ;
 };
 
 #endif // MANAGEDEVICENAMES_H

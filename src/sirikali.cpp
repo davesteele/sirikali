@@ -164,11 +164,8 @@ void sirikali::setUpApp( const QString& volume )
 	table->setColumnWidth( 2,dimensions.columnWidthAt( 2 ) ) ;
 	table->setColumnWidth( 3,dimensions.columnWidthAt( 3 ) ) ;
 
-#if QT_VERSION < QT_VERSION_CHECK( 5,0,0 )
-	m_ui->tableWidget->verticalHeader()->setResizeMode( QHeaderView::ResizeToContents ) ;
-#else
 	m_ui->tableWidget->verticalHeader()->setSectionResizeMode( QHeaderView::ResizeToContents ) ;
-#endif
+
 	m_ui->tableWidget->verticalHeader()->setMinimumSectionSize( 30 ) ;
 
 	m_ui->tableWidget->setMouseTracking( true ) ;
@@ -226,12 +223,8 @@ void sirikali::setUpApp( const QString& volume )
 		if( utility::platformIsWindows() ){
 
 			_enable( m->addAction( "Encfs" ),"Encfs" ) ;
-
-			auto ac = m->addAction( "Securefs" ) ;
-
-			_enable( ac,"Securefs" ) ;
-
-			m_warnOnMissingExecutable = !ac->isEnabled() ;
+			_enable( m->addAction( "Securefs" ),"Securefs" ) ;
+			_enable( m->addAction( "Sshfs" ),"Sshfs" ) ;
 
 		}else if( utility::platformIsOSX() ){
 
@@ -245,6 +238,7 @@ void sirikali::setUpApp( const QString& volume )
 			_enable( m->addAction( "Securefs" ),"Securefs" ) ;
 			_enable( m->addAction( "Encfs" ),"Encfs" ) ;
 			_enable( m->addAction( "Ecryptfs" ),"Ecryptfs" ) ;
+			_enable( m->addAction( "Sshfs" ),"Sshfs" ) ;
 		}
 
 		return m ;
@@ -1087,15 +1081,15 @@ void sirikali::cryfsProperties()
 	this->enableAll() ;
 }
 
-static std::pair< bool,QByteArray > _volume_properties( const QString& cmd,
-							const std::pair< QString,QString >& args,
-							const QString& path )
+static utility::result< QByteArray > _volume_properties( const QString& cmd,
+							 const std::pair< QString,QString >& args,
+							 const QString& path )
 {
 	auto e = utility::Task::run( cmd + args.first + path ).await() ;
 
 	if( e.success() ){
 
-		return { true,e.stdOut() } ;
+		return e.stdOut() ;
 	}else{
 		for( auto& it : utility::readFavorites() ){
 
@@ -1110,11 +1104,14 @@ static std::pair< bool,QByteArray > _volume_properties( const QString& cmd,
 
 				e = utility::Task::run( cmd + args.first + args.second + s ).await() ;
 
-				return { e.success(),e.stdOut() } ;
+				if( e.success() ){
+
+					return e.stdOut() ;
+				}
 			}
 		}
 
-		return { false,QByteArray() } ;
+		return utility::result< QByteArray >() ;
 	}
 }
 
@@ -1142,9 +1139,9 @@ static void _volume_properties( const QString& cmd,const std::pair<QString,QStri
 	}else{
 		auto e = _volume_properties( "\"" + exe + "\"",args,path ) ;
 
-		if( e.first ){
+		if( e ){
 
-			auto s = e.second ;
+			auto& s = e.value() ;
 
 			if( cmd == "gocryptfs" ){
 
@@ -1453,9 +1450,14 @@ void sirikali::createVolume( QAction * ac )
 {
 	if( ac ){
 
-		this->mount( volumeInfo(),ac->objectName() ) ;
-	}else{
-		this->mount( volumeInfo(),"Cryfs" ) ;
+		auto s = ac->objectName() ;
+
+		if( s == "Sshfs" ){
+
+			favorites::instance( this,favorites::type::sshfs ) ;
+		}else{
+			this->mount( volumeInfo(),s ) ;
+		}
 	}
 }
 

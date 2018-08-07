@@ -4,7 +4,7 @@ set_property( GLOBAL PROPERTY ALLOW_DUPLICATE_CUSTOM_TARGETS ON )
 
 project( sirikali )
 
-set( PGR_VERSION "1.3.4" )
+set( PGR_VERSION "1.3.5" )
 
 add_definitions( -Wextra -Wall -pedantic )
 
@@ -101,12 +101,23 @@ endif()
 file( WRITE ${PROJECT_BINARY_DIR}/json.h "\n#include \"${JSON_HEADER_PATH}\"" )
 MESSAGE( STATUS "found json.hpp header file at: ${JSON_HEADER_PATH}" )
 
-find_file( GCRYPT_INCLUDE_FILE gcrypt.h )
-find_path( GCRYPT_INCLUDE_PATH gcrypt.h )
+if( WIN32 )
 
-add_definitions( -I${GCRYPT_INCLUDE_PATH} )
+    set( GCRYPT_INCLUDE_FILE "${PROJECT_SOURCE_DIR}/libs/include/gcrypt.h" )
+    set( GCRYPT_INCLUDE_PATH "${PROJECT_SOURCE_DIR}/libs/include" )
 
-find_library( GCRYPT_LIBRARY gcrypt )
+    MESSAGE( STATUS "${GCRYPT_INCLUDE_FILE}" )
+    set( GCRYPT_LIBRARY "${PROJECT_SOURCE_DIR}/libs/lib/libgcrypt.dll.a" )
+
+else()
+
+    find_file( GCRYPT_INCLUDE_FILE gcrypt.h )
+    find_path( GCRYPT_INCLUDE_PATH gcrypt.h )
+
+    add_definitions( -I${GCRYPT_INCLUDE_PATH} )
+
+    find_library( GCRYPT_LIBRARY gcrypt )
+endif()
 
 if( NOT GCRYPT_INCLUDE_FILE )
 	MESSAGE( FATAL_ERROR "could not find gcrypt header file" )
@@ -433,7 +444,13 @@ install( FILES ${PROJECT_BINARY_DIR}/sirikali.desktop
 )
 
 if( UNIX AND NOT APPLE )
-    ADD_SUBDIRECTORY( src/siripolkit )
+	if( "${POLKIT_SUPPORT}" STREQUAL "" )
+		SET( POLKIT_SUPPORT "true" )
+	endif()
+
+	if( POLKIT_SUPPORT )
+		ADD_SUBDIRECTORY( src/siripolkit )
+	endif()
 endif()
 
 file( WRITE ${PROJECT_BINARY_DIR}/org.sirikali.pkexec.policy
@@ -457,6 +474,14 @@ file( WRITE ${PROJECT_BINARY_DIR}/org.sirikali.pkexec.policy
 </policyconfig>
 ")
 
-install ( FILES ${PROJECT_BINARY_DIR}/org.sirikali.pkexec.policy DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/polkit-1/actions )
+if( UNIX AND NOT APPLE )
+	if( "${POLKIT_SUPPORT}" STREQUAL "" )
+		SET( POLKIT_SUPPORT "true" )
+	endif()
+
+	if( POLKIT_SUPPORT )
+		install ( FILES ${PROJECT_BINARY_DIR}/org.sirikali.pkexec.policy DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/polkit-1/actions )
+	endif()
+endif()
 
 endif()

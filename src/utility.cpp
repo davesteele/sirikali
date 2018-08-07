@@ -684,7 +684,23 @@ QString _exe_path( const QString& exe,Function function )
 
 		return e ;
 	}else{
-		return QString() ;
+		auto s = utility::windowsExecutableSearchPath() ;
+
+		auto m = s + "\\bin\\" + exe + ".exe" ;
+
+		if( utility::pathExists( m ) ){
+
+			return m ;
+		}else{
+			auto m = s + "\\" + exe + ".exe" ;
+
+			if( utility::pathExists( m ) ){
+
+				return m ;
+			}else{
+				return {} ;
+			}
+		}
 	}
 }
 
@@ -701,19 +717,14 @@ QString utility::executableFullPath( const QString& f )
 			}else if( e == "sshfs" ){
 
 				return _exe_path( e,SiriKali::Winfsp::sshfsInstallDir ) ;
-			}else{
-				auto m = utility::windowsExecutableSearchPath() + "/" + e + ".exe" ;
 
-				if( utility::pathExists( m ) ){
+			}else if( e == "securefs" ){
 
-					return m ;
-				}else{
-					return QString() ;
-				}
+				return _exe_path( e,SiriKali::Winfsp::securefsInstallDir ) ;
 			}
-		}else{
-			return QString() ;
 		}
+
+		return QString() ;
 	} ) ;
 }
 
@@ -1958,4 +1969,188 @@ QString utility::windowsExecutableSearchPath()
 	}
 
 	return _settings->value( "WindowsExecutableSearchPath" ).toString() ;
+}
+
+
+static utility::result< int > _convert_string_to_version( const QString& e )
+{
+	auto _convert = []( const QString& e )->utility::result< int >{
+
+		bool ok ;
+
+		auto s = e.toInt( &ok ) ;
+
+		if( ok ){
+
+			return s  ;
+		}else{
+			return {} ;
+		}
+	} ;
+
+	auto s = utility::split( e,'.' ) ;
+
+	auto components = s.size() ;
+
+	int major = 1000000 ;
+	int minor = 1000 ;
+	int patch = 1 ;
+
+	if( components == 1 ){
+
+		auto a = _convert( s.first() ) ;
+
+		if( a ){
+
+			return major * a.value() ;
+		}
+
+	}else if( components == 2 ){
+
+		auto a = _convert( s.at( 0 ) ) ;
+		auto b = _convert( s.at( 1 ) ) ;
+
+		if( a && b ){
+
+			return major * a.value() + minor * b.value() ;
+		}
+
+	}else if( components == 3 ){
+
+		auto a = _convert( s.at( 0 ) ) ;
+		auto b = _convert( s.at( 1 ) ) ;
+		auto c = _convert( s.at( 2 ) ) ;
+
+		if( a && b && c ){
+
+			return major * a.value() + minor * b.value() + patch * c.value() ;
+		}
+	}
+
+	return {} ;
+}
+
+static utility::result< QString > _installed_version( const QString& backend )
+{
+	auto _remove_junk = []( QString e ){
+
+		e.replace( "v","" ).replace( ";","" ) ;
+
+		QString m ;
+
+		for( int s = 0 ; s < e.size() ; s++ ){
+
+			auto n = e.at( s ) ;
+
+			if( n == '.' || ( n >= '0' && n <= '9' ) ){
+
+				m += n ;
+			}else{
+				break ;
+			}
+		}
+
+		return m ;
+	} ;
+
+	auto exe = utility::executableFullPath( backend ) ;
+
+	if( exe.isEmpty() ){
+
+		return {} ;
+	}
+
+	auto cmd = [ & ](){
+
+		if( backend == "securefs" ){
+
+			return backend + " version" ;
+		}else{
+			return backend + " --version" ;
+		}
+	}() ;
+
+	auto s = utility::systemEnvironment() ;
+
+	auto r = [ & ](){
+
+		if( backend == "encfs" ){
+
+			return QString( ::Task::process::run( cmd,{},-1,{},s ).get().std_error() ) ;
+		}else{
+			return QString( ::Task::process::run( cmd,{},-1,{},s ).get().std_out() ) ;
+		}
+	}() ;
+
+	if( r.isEmpty() ){
+
+		return {} ;
+	}
+
+	auto m = utility::split( utility::split( r,'\n' ).first(),' ' ) ;
+
+	if( utility::equalsAtleastOne( backend,"cryfs","encfs","sshfs" ) ){
+
+		if( m.size() >= 3 ){
+
+			return _remove_junk( m.at( 2 ) ) ;
+		}
+
+	}else if( utility::equalsAtleastOne( backend,"gocryptfs","securefs","ecryptfs-simple" ) ){
+
+		if( m.size() >= 2 ){
+
+			return _remove_junk( m.at( 1 ) ) ;
+		}
+	}
+
+	return {} ;
+}
+
+::Task::future< utility::result< QString > >& utility::backEndInstalledVersion( const QString& backend )
+{
+	return ::Task::run( _installed_version,backend ) ;
+}
+
+static utility::result< int > _installedVersion( const QString& backend )
+{
+	auto s = utility::backEndInstalledVersion( backend ).get() ;
+
+	if( s && !s.value().isEmpty() ){
+
+		return _convert_string_to_version( s.value() ) ;
+	}else{
+		return {} ;
+	}
+}
+
+template< typename Function >
+::Task::future< utility::result< bool > >& _compare_versions( const QString& backend,
+							     const QString& version,
+							     Function compare )
+{
+	return ::Task::run( [ = ]()->utility::result< bool >{
+
+		auto installed = _installedVersion( backend ) ;
+		auto guard_version = _convert_string_to_version( version ) ;
+
+		if( installed && guard_version ){
+
+			return compare( installed.value(),guard_version.value() ) ;
+		}else{
+			return {} ;
+		}
+	} ) ;
+}
+
+::Task::future< utility::result< bool > >& utility::backendIsGreaterOrEqualTo( const QString& backend,
+									       const QString& version )
+{
+	return _compare_versions( backend,version,std::greater_equal<int>() ) ;
+}
+
+::Task::future< utility::result< bool > >& utility::backendIsLessThan( const QString& backend,
+								       const QString& version )
+{
+	return _compare_versions( backend,version,std::less<int>() ) ;
 }
