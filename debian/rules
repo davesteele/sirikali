@@ -3,7 +3,7 @@
 PKD = $(word 1,$(abspath $(dir $(MAKEFILE_LIST))))
 PKG = $(shell dpkg-parsechangelog -l$(PKD)/changelog --show-field=Source)
 VER ?= $(shell (dpkg-parsechangelog -l$(PKD)/changelog | grep Version | sed 's/Version..//' | sed 's/-.\+//'))
-PRODUCT_VER = $(shell (grep version changelog | tail -1 | awk '{print $2}'))
+PRODUCT_VER = $(shell (grep version changelog | tail -1 | awk '{print $2}' | sed "s/^\\\([0-9.]\+\\\).\+/\1/"))
 
 # Uncomment this to turn on verbose mode.
 #export DH_VERBOSE=1
