@@ -60,6 +60,7 @@
 #include "install_prefix.h"
 #include "locale_path.h"
 #include "plugins.h"
+#include "crypto.h"
 #include "json.h"
 #include "winfsp.h"
 #include "readonlywarning.h"
@@ -145,16 +146,15 @@ static QSettings * _settings ;
 static QByteArray _cookie ;
 static QString _polkit_socket_path ;
 
+static debugWindow * _debugWindow ;
+
 static bool _use_polkit = false ;
 
 static std::function< void() > _failed_to_connect_to_zulupolkit ;
 
-QString utility::socketPath()
-{
-	return QStandardPaths::writableLocation( QStandardPaths::RuntimeLocation ) ;
-}
-
 static bool _enable_debug = false ;
+
+static bool _enable_full_debug = false ;
 
 void utility::enableDebug( bool e )
 {
@@ -166,8 +166,6 @@ bool utility::debugEnabled()
 	return _enable_debug ;
 }
 
-static bool _enable_full_debug = false ;
-
 void utility::enableFullDebug( bool e )
 {
 	_enable_full_debug = e ;
@@ -176,6 +174,27 @@ void utility::enableFullDebug( bool e )
 bool utility::debugFullEnabled()
 {
 	return _enable_full_debug ;
+}
+
+void utility::setDebugWindow( debugWindow * w )
+{
+	_debugWindow = w ;
+}
+
+static void _set_debug_window_text( const QString& e )
+{
+	_debugWindow->UpdateOutPut( e,utility::debugFullEnabled() ) ;
+}
+
+utility::SocketPaths utility::socketPath()
+{
+	if( utility::platformIsWindows() ){
+
+		return { QString(),"\\\\.\\pipe\\SiriKaliSocket" } ;
+	}else{
+		auto a = QStandardPaths::writableLocation( QStandardPaths::RuntimeLocation ) ;
+		return { a,a + "/SiriKali.socket" } ;
+	}
 }
 
 void utility::polkitFailedWarning( std::function< void() > e )
@@ -281,49 +300,79 @@ void utility::Task::execute( const QString& exe,int waitTime,
 	}
 }
 
+static void _build_debug_msg( const QString& b )
+{
+	QString a = "***************************\n" ;
+	QString c = "\n***************************" ;
+
+	_set_debug_window_text( a + b + c ) ;
+}
+
+utility::debug utility::debug::operator<<( const QString& e )
+{
+	_build_debug_msg( e ) ;
+
+	return utility::debug() ;
+}
+
+utility::debug utility::debug::operator<<( int e )
+{
+	_build_debug_msg( QString::number( e ) ) ;
+
+	return utility::debug() ;
+}
+
+utility::debug utility::debug::operator<<( const char * e )
+{
+	_build_debug_msg( e ) ;
+
+	return utility::debug() ;
+}
+
+utility::debug utility::debug::operator<<( const QByteArray& e )
+{
+	_build_debug_msg( e ) ;
+
+	return utility::debug() ;
+}
+
+utility::debug utility::debug::operator<<( const QStringList& e )
+{
+	_build_debug_msg( e.join( "\n" ) ) ;
+	return utility::debug() ;
+}
+
+void utility::logCommandOutPut( const QString& exe )
+{
+	utility::logCommandOutPut( ::Task::process::result(),exe ) ;
+}
+
 void utility::logCommandOutPut( const ::Task::process::result& m,const QString& exe )
 {
-	if( utility::debugFullEnabled() || utility::debugEnabled() ){
+	auto _trim = []( QString e ){
 
-		auto _trim = []( QString e ){
+		while( true ){
 
-			while( true ){
+			if( e.endsWith( '\n' ) ){
 
-				if( e.endsWith( '\n' ) ){
-
-					e.truncate( e.size() - 1 ) ;
-				}else{
-					break ;
-				}
+				e.truncate( e.size() - 1 ) ;
+			}else{
+				break ;
 			}
-
-			return e ;
-		} ;
-
-		QString s = "Exit Code: %1\nExit Status: %2\nStdOut: %3\n-------\nStdError: %4\n-------\nCommand: %5\n-------\n" ;
-
-		auto e = s.arg( QString::number( m.exit_code() ),
-				QString::number( m.exit_status() ),
-				_trim( m.std_out() ),
-				_trim( m.std_error() ),
-				exe ) ;
-
-		if( utility::platformIsWindows() ){
-
-			/*
-			 * We log the output to a file on a user's desktop because output
-			 * dont seem to show up on the terminal on windows
-			 */
-
-			QFile log( QDir::homePath() + "/Desktop/SiriKali.log.txt" ) ;
-
-			log.open( QIODevice::WriteOnly | QIODevice::Append ) ;
-
-			log.write( e.toLatin1() ) ;
-		}else{
-			utility::debug() << e ;
 		}
-	}
+
+		return e ;
+	} ;
+
+	QString s = "Exit Code: %1\nExit Status: %2\n-------\nStdOut: %3\n-------\nStdError: %4\n-------\nCommand: %5\n-------\n" ;
+
+	auto e = s.arg( QString::number( m.exit_code() ),
+			QString::number( m.exit_status() ),
+			_trim( m.std_out() ),
+			_trim( m.std_error() ),
+			exe ) ;
+
+	_set_debug_window_text( e ) ;
 }
 
 static QString siriPolkitExe()
@@ -340,7 +389,7 @@ static QString siriPolkitExe()
 
 static ::Task::future< utility::Task >& _start_siripolkit( const QString& e )
 {
-	_cookie = plugins::getRandomData( 16 ).toHex() ;
+	_cookie = crypto::getRandomData( 16 ).toHex() ;
 
 	return ::Task::run( [ = ]{
 
@@ -511,7 +560,7 @@ void utility::openPath( const QString& path,const QString& opener,
 		s.f_bavail = e.f_bavail ;
 		s.f_bfree  = e.f_bfree ;
 		s.f_blocks = e.f_blocks ;
-		s.f_bsize  = e.f_bsize ;
+		s.f_bsize  = static_cast< decltype( s.f_bsize ) >( e.f_bsize ) ;
 #endif
 		return s ;
 	} ) ;
@@ -1087,12 +1136,42 @@ bool utility::pathExists( const QString& path )
 
 QStringList utility::split( const QString& e,char token )
 {
-	return e.split( token,QString::SkipEmptyParts ) ;
+	if( e.isEmpty() ){
+
+		return QStringList( QString() ) ;
+	}else{
+		return e.split( token,QString::SkipEmptyParts ) ;
+	}
 }
 
 QString utility::walletName()
 {
 	return "SiriKali" ;
+}
+
+QString utility::removeOption( const QStringList& e,const QString& s )
+{
+	QString n ;
+
+	for( const auto& it : e ){
+
+		if( it != s ){
+
+			n += it + "," ;
+		}
+	}
+
+	if( n.endsWith( "," ) ){
+
+		n.remove( n.size() - 1,1 ) ;
+	}
+
+	return n ;
+}
+
+QString utility::removeOption( const QString& e,const QString& s )
+{
+	return utility::removeOption( utility::split( e,',' ),s ) ;
 }
 
 QString utility::walletName( LXQt::Wallet::BackEnd s )
@@ -1647,7 +1726,7 @@ static inline bool _terminalEchoOff( struct termios * old,struct termios * curre
 	}
 
 	*current = *old;
-	current->c_lflag &= ~ECHO;
+	current->c_lflag &= static_cast< unsigned int >( ~ECHO ) ;
 
 	if( tcsetattr( 1,TCSAFLUSH,current ) != 0 ){
 
@@ -1752,11 +1831,9 @@ void utility::windowDimensions::setDimensions( const QStringList& e )
 
 	if( m_ok ){
 
-		using tp = decltype( m_array.size() ) ;
+		for( size_t i = 0 ; i < m_array.size() ; i++ ){
 
-		for( tp i = 0 ; i < m_array.size() ; i++ ){
-
-			m_array[ i ] = e.at( i ).toInt( &m_ok ) ;
+			m_array[ i ] = static_cast< int >( e.at( static_cast< int >( i ) ).toInt( &m_ok ) ) ;
 
 			if( !m_ok ){
 

@@ -64,6 +64,19 @@ QString securefsInstallDir() ;
 
 std::vector< QStringList > commands() ;
 
+struct mountOptions
+{
+	QString mode ;
+	QString subtype ;
+	QString cipherFolder ;
+	QString mountPointPath ;
+	QString fuseOptions ;
+};
+
+mountOptions mountOption( const QStringList& e ) ;
+
+std::vector< mountOptions > getMountOptions() ;
+
 bool babySittingBackends() ;
 
 void updateVolumeList( std::function< void() > ) ;

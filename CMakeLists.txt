@@ -4,7 +4,7 @@ set_property( GLOBAL PROPERTY ALLOW_DUPLICATE_CUSTOM_TARGETS ON )
 
 project( sirikali )
 
-set( PGR_VERSION "1.3.5" )
+set( PGR_VERSION "1.3.6" )
 
 add_definitions( -Wextra -Wall -pedantic )
 
@@ -243,9 +243,12 @@ set( UI_FILES 	src/sirikali.ui
                 src/configfileoption.ui
                 src/configoptions.ui
                 src/ecryptfscreateoptions.ui
+                src/debugwindow.ui
+                src/encfscreateoptions.ui
 )
 
 set( MOC_FILES
+		src/encfscreateoptions.h
                 src/configoptions.h
                 src/configfileoption.h
                 src/checkforupdates.h
@@ -267,10 +270,14 @@ set( MOC_FILES
 		src/securefscreateoptions.h
 		src/cryfscreateoptions.h
 		src/ecryptfscreateoptions.h
+		src/debugwindow.h
  )
 
 set( SRC 	src/dialogok.cpp
 		src/main.cpp
+		src/crypto.cpp
+		src/encfscreateoptions.cpp
+		src/debugwindow.cpp
 		src/gocryptfscreateoptions.cpp
 		src/configoptions.cpp
                 src/configfileoption.cpp

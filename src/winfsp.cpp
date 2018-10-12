@@ -69,6 +69,8 @@ void updateVolumeList( std::function< void() > function )
 
 #ifdef Q_OS_WIN
 
+#include <windows.h>
+
 int poll( struct pollfd * a,int b,int c )
 {
 	Q_UNUSED( a ) ;
@@ -315,7 +317,8 @@ SiriKali::Winfsp::manageInstances::getProcessOutput( QProcess& exe,bool encfs )
 		}
 	}
 
-	if( utility::containsAtleastOne( m,"init","has been started" ) ){
+	if( !m.startsWith( "cygfuse: initialization failed:" ) &&
+			utility::containsAtleastOne( m,"init","has been started" ) ){
 
 		return std::make_tuple( true,QByteArray(),QByteArray() ) ;
 	}else{
@@ -430,6 +433,53 @@ Task::process::result SiriKali::Winfsp::manageInstances::addInstance( const QStr
 	return s ;
 }
 
+static QString _clean_path( QString e )
+{
+	if( e.startsWith( '\"' ) ){
+
+		e.remove( 0,1 ) ;
+	}
+
+	if( e.endsWith( '\"' ) ){
+
+		e.truncate( e.size() - 1 ) ;
+	}
+
+	return e ;
+}
+
+SiriKali::Winfsp::mountOptions SiriKali::Winfsp::mountOption( const QStringList& e )
+{
+	SiriKali::Winfsp::mountOptions mOpt ;
+
+	for( int i = 0 ; i < e.size() ; i++ ){
+
+		const auto& m = e.at( i ) ;
+
+		if( m == "-o" && i + 1 < e.size() ){
+
+			mOpt.fuseOptions = e.at( i + 1 ) ;
+
+			mOpt.mode = mOpt.fuseOptions.mid( 0,2 ) ;
+
+			for( const auto& it : utility::split( mOpt.fuseOptions,',' ) ){
+
+				if( it.startsWith( "subtype=" ) ){
+
+					mOpt.subtype = it.mid( 8 ) ;
+				}
+			}
+
+		}else if( m.endsWith( ":" ) && m.size() == 2 ){
+
+			mOpt.cipherFolder   = _clean_path( e.at( i - 1 ) ) ;
+			mOpt.mountPointPath = _clean_path( e.at( i ) ) ;
+		}
+	}
+
+	return mOpt ;
+}
+
 Task::process::result SiriKali::Winfsp::manageInstances::removeInstance( const QString& e )
 {
 	auto mountPoint = e ;
@@ -440,17 +490,9 @@ Task::process::result SiriKali::Winfsp::manageInstances::removeInstance( const Q
 
 		auto e = m_instances[ i ] ;
 
-		const auto cmd = e->program() ;
+		auto cmd = e->program() ;
 
-		auto m = [ & ](){
-
-			if( utility::endsWithAtLeastOne( cmd,"encfs.exe","sshfs.exe" ) ){
-
-				return e->arguments().at( 2 ) ;
-			}else{
-				return e->arguments().at( e->arguments().size() - 3 ) ;
-			}
-		}() ;
+		auto m = SiriKali::Winfsp::mountOption( e->arguments() ).mountPointPath ;
 
 		if( m == mountPoint ){
 
@@ -567,6 +609,18 @@ std::vector< QStringList > SiriKali::Winfsp::commands()
 	}else{
 		return SiriKali::Winfsp::ActiveInstances().commands() ;
 	}
+}
+
+std::vector< SiriKali::Winfsp::mountOptions > SiriKali::Winfsp::getMountOptions()
+{
+	std::vector< SiriKali::Winfsp::mountOptions > mOpts ;
+
+	for( const auto& it : SiriKali::Winfsp::commands() ){
+
+		mOpts.emplace_back( SiriKali::Winfsp::mountOption( it ) ) ;
+	}
+
+	return mOpts ;
 }
 
 Task::process::result SiriKali::Winfsp::FspLaunchStop( const QString& m )

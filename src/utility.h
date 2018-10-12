@@ -59,6 +59,7 @@
 #include "favorites.h"
 #include "plugins.h"
 #include "utility2.h"
+#include "debugwindow.h"
 
 #include <QObject>
 #include <QLabel>
@@ -68,6 +69,11 @@
 #include <iostream>
 class QByteArray ;
 class QEvent ;
+
+namespace utility
+{
+	static const QString reverseModeOption = "-SiriKaliReverseMode" ;
+}
 
 namespace utility
 {
@@ -123,74 +129,15 @@ namespace utility
 
 namespace utility
 {
-	class debug
+	struct debug
 	{
-	public:
-		debug( bool s = true ) : m_stdout( s )
-		{
-		}
-
-		template< typename T >
-		utility::debug operator<<( const T& e )
-		{
-			if( m_stdout ){
-
-				std::cout << e << std::endl ;
-			}else{
-				std::cerr << e << std::endl ;
-			}
-
-			return utility::debug( m_stdout ) ;
-		}
-
-		utility::debug operator<<( const QByteArray& e )
-		{
-			if( m_stdout ){
-
-				std::cout << e.constData() << std::endl ;
-			}else{
-				std::cerr << e.constData() << std::endl ;
-			}
-
-			return utility::debug( m_stdout ) ;
-		}
-
-		utility::debug operator<<( const QString& e )
-		{
-			if( m_stdout ){
-
-				std::cout << e.toLatin1().constData() << std::endl ;
-			}else{
-				std::cerr << e.toLatin1().constData() << std::endl ;
-			}
-
-			return utility::debug( m_stdout ) ;
-		}
-
-		utility::debug operator<<( const QStringList& e )
-		{
-			if( m_stdout ){
-
-				for( const auto& it : e ){
-
-					std::cout << it.toLatin1().constData() << std::endl ;
-				}
-			}else{
-				for( const auto& it : e ){
-
-					std::cerr << it.toLatin1().constData() << std::endl ;
-				}
-			}
-
-			return utility::debug( m_stdout ) ;
-		}
-	private:
-		bool m_stdout ;
+		utility::debug operator<<( int ) ;
+		utility::debug operator<<( const char * ) ;
+		utility::debug operator<<( const QByteArray& ) ;
+		utility::debug operator<<( const QString& ) ;
+		utility::debug operator<<( const QStringList& ) ;
 	};
-}
 
-namespace utility
-{
 	struct wallet
 	{
 		bool opened ;
@@ -376,7 +323,9 @@ namespace utility
 	QString windowsExecutableSearchPath() ;
 
 	void logCommandOutPut( const ::Task::process::result&,const QString& ) ;
+	void logCommandOutPut( const QString& ) ;
 
+	void setDebugWindow( debugWindow * ) ;
 	void polkitFailedWarning( std::function< void() > ) ;
 	bool useSiriPolkit( void ) ;
 	void quitHelper() ;
@@ -390,16 +339,24 @@ namespace utility
 	void readFavorites( QMenu * ) ;
 	void removeFavoriteEntry( const favorites::entry& ) ;
 	int favoritesEntrySize() ;
+	QString removeOption( const QStringList&,const QString& option ) ;
+	QString removeOption( const QString& commaSeparatedString,const QString& option ) ;
 	QString getVolumeID( const QString&,bool = false ) ;
 	QString localizationLanguage() ;
 	QString localizationLanguagePath() ;
-	QString socketPath() ;
 	void setLocalizationLanguage( const QString& ) ;
 	QString walletName( void ) ;
 	QString walletName( LXQt::Wallet::BackEnd ) ;
 	QString applicationName( void ) ;
 	bool eventFilter( QObject * gui,QObject * watched,QEvent * event,std::function< void() > ) ;
 	void licenseInfo( QWidget * ) ;
+
+	struct SocketPaths{
+		QString folderPath ;
+		QString socketFullPath ;
+	} ;
+
+	SocketPaths socketPath() ;
 
 	::Task::future< utility::result< QString > >& backEndInstalledVersion( const QString& backend ) ;
 
@@ -545,7 +502,7 @@ namespace utility
 		}
 		static void wait( int s )
 		{
-			sleep( s ) ;
+			sleep( static_cast< unsigned int >( s ) ) ;
 		}
 		static void waitForOneSecond( void )
 		{

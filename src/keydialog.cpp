@@ -34,6 +34,7 @@
 #include "lxqt_wallet.h"
 #include "utility2.h"
 #include "plugin.h"
+#include "crypto.h"
 #include "configfileoption.h"
 
 static QString _kwallet()
@@ -387,7 +388,7 @@ void keyDialog::setDefaultUI()
 {
 	if( m_create ){
 
-		if( utility::equalsAtleastOne( m_exe,"Securefs","Cryfs","Gocryptfs","Ecryptfs" ) ){
+		if( utility::equalsAtleastOne( m_exe,"Securefs","Cryfs","Gocryptfs","Ecryptfs","Encfs" ) ){
 
 			m_ui->pbOptions->setEnabled( true ) ;
 		}else{
@@ -485,6 +486,17 @@ void keyDialog::pbOptions()
 			this->hide() ;
 
 			cryfscreateoptions::instance( m_parentWidget,[ this ]( const QStringList& e ){
+
+				utility2::stringListToStrings( e,m_createOptions,m_configFile ) ;
+
+				this->ShowUI() ;
+			} ) ;
+
+		}else if( m_exe == "Encfs" ){
+
+			this->hide() ;
+
+			encfscreateoptions::instance( m_parentWidget,[ this ]( const QStringList& e ){
 
 				utility2::stringListToStrings( e,m_createOptions,m_configFile ) ;
 
@@ -914,6 +926,11 @@ void keyDialog::reportErrorMessage( const siritask::cmdStatus& s )
 		msg = tr( "Failed To Complete The Request.\nSshfs Executable Could Not Be Found." ) ;
 		break;
 
+	case siritask::status::backEndDoesNotSupportCustomConfigPath :
+
+		msg = tr( "Backend Does Not Support Custom Configuration File Path." ) ;
+		break;
+
 	case siritask::status::cryfsNotFound :
 
 		msg = tr( "Failed To Complete The Request.\nCryfs Executable Could Not Be Found." ) ;
@@ -1108,7 +1125,7 @@ void keyDialog::encryptedFolderCreate()
 
 void keyDialog::pbSetKeyKeyFile()
 {
-	m_ui->lineEditSetKeyKeyFile->setText( QFileDialog::getOpenFileName( this,tr( "KeyFile" ),utility::homePath(),0 ) ) ;
+	m_ui->lineEditSetKeyKeyFile->setText( QFileDialog::getOpenFileName( this,tr( "KeyFile" ),utility::homePath(),nullptr ) ) ;
 }
 
 void keyDialog::pbSetKey()
@@ -1122,7 +1139,7 @@ void keyDialog::pbSetKey()
 
 		if( m_hmac ){
 
-			return plugins::hmac_key( keyFile,passphrase ) ;
+			return crypto::hmac_key( keyFile,passphrase ) ;
 		}else{
 			auto exe = utility::externalPluginExecutable() ;
 
@@ -1251,7 +1268,12 @@ void keyDialog::encryptedFolderMount()
 
 		if( m_ui->checkBoxOpenReadOnly->isChecked() ){
 
-			m_mountOptions += " --allow-filesystem-upgrade" ;
+			if( m_mountOptions.isEmpty() ){
+
+				m_mountOptions = "--allow-filesystem-upgrade" ;
+			}else{
+				m_mountOptions += ",--allow-filesystem-upgrade" ;
+			}
 		}
 	}
 
@@ -1436,7 +1458,7 @@ void keyDialog::cbActicated( QString e )
 
 			Task::run( [ q = std::move( q ) ](){
 
-				return plugins::hmac_key( q,QString() ) ;
+				return crypto::hmac_key( q,QString() ) ;
 
 			} ).then( [ this ]( QByteArray key ){
 

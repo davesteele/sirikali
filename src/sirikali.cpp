@@ -56,6 +56,7 @@
 #include "favorites.h"
 #include "walletconfig.h"
 #include "plugins.h"
+#include "crypto.h"
 #include "help.h"
 #include "configoptions.h"
 #include "winfsp.h"
@@ -77,8 +78,10 @@ sirikali::sirikali() :
 	m_secrets( this ),
 	m_mountInfo( this,true,[ & ](){ QCoreApplication::exit( m_exitStatus ) ; } ),
 	m_checkUpdates( this ),
-	m_configOptions( this,m_secrets,&m_language_menu,this->configOption() )
+	m_configOptions( this,m_secrets,&m_language_menu,this->configOption() ),
+	m_debugWindow()
 {
+	utility::setDebugWindow( &m_debugWindow ) ;
 }
 
 configOptions::functions sirikali::configOption()
@@ -131,6 +134,7 @@ void sirikali::closeApplication( int s,const QString& e )
 
 	if( m_ui ){
 
+		m_debugWindow.Hide() ;
 		this->hide() ;
 		utility::Task::suspendForOneSecond() ;
 	}
@@ -278,6 +282,11 @@ void sirikali::setUpApp( const QString& volume )
 	this->startGUI( m ) ;
 
 	QTimer::singleShot( utility::checkForUpdateInterval(),this,SLOT( autoUpdateCheck() ) ) ;
+
+	if( utility::debugEnabled() || utility::debugFullEnabled() ){
+
+		this->showDebugWindow() ;
+	}
 }
 
 void sirikali::showTrayIconWhenReady()
@@ -466,13 +475,6 @@ void sirikali::startGUI( const std::vector< volumeInfo >& m )
 	if( !m_startHidden ){
 
 		this->raiseWindow() ;
-
-		if( m_warnOnMissingExecutable ){
-
-			auto e = tr( "Failed To Locate \"securefs\" Executable.\n\nGo To \"Menu->Settings->Editable Options->Set Executable Search Path\"\n\n And Then Set A Path To Where \"securefs\" Executable Is Located On The Computer And Restart." ) ;
-
-			DialogMsg( this ).ShowUIOK( tr( "WARNING" ),e ) ;
-		}
 	}
 
 	if( utility::autoMountFavoritesOnStartUp() ){
@@ -558,25 +560,28 @@ void sirikali::start( const QStringList& l )
 
 		auto s = utility::socketPath() ;
 
-		utility::createFolder( s ) ;
+		if( !utility::platformIsWindows() ){
 
-		if( utility::pathIsWritable( s ) ){
+			utility::createFolder( s.folderPath ) ;
 
-			oneinstance::callbacks cb = {
+			if( !utility::pathIsWritable( s.folderPath ) ){
 
-				[ this ]( const QString& e ){ this->setUpApp( e ) ; },
-				[ this ](){ this->closeApplication( 1 ) ; },
-				[ this ]( const QString& e ){ this->raiseWindow( e ) ; },
-			} ;
+				DialogMsg( this ).ShowUIOK( tr( "ERROR" ),tr( "\"%1\" Folder Must Be Writable" ).arg( s.folderPath ) ) ;
 
-			auto x = utility::cmdArgumentValue( l,"-d" ) ;
-
-			oneinstance::instance( this,s + "/SiriKali.socket",x,std::move( cb ) ) ;
-		}else{
-			DialogMsg( this ).ShowUIOK( tr( "ERROR" ),tr( "\"%1\" Folder Must Be Writable" ).arg( s ) ) ;
-
-			this->closeApplication() ;
+				return this->closeApplication() ;
+			}
 		}
+
+		oneinstance::callbacks cb = {
+
+			[ this ]( const QString& e ){ this->setUpApp( e ) ; },
+			[ this ](){ this->closeApplication( 1 ) ; },
+			[ this ]( const QString& e ){ this->raiseWindow( e ) ; },
+		} ;
+
+		auto x = utility::cmdArgumentValue( l,"-d" ) ;
+
+		oneinstance::instance( this,s.socketFullPath,x,std::move( cb ) ) ;
 	}
 }
 
@@ -586,7 +591,7 @@ void sirikali::cliCommand( const QStringList& l )
 
 		auto e = utility::cmdArgumentValue( l,"-f" ) ;
 
-		auto s = plugins::hmac_key( e,utility::readPassword() ) ;
+		auto s = crypto::hmac_key( e,utility::readPassword() ) ;
 
 		if( s.isEmpty() ){
 
@@ -696,7 +701,7 @@ void sirikali::unlockVolume( const QStringList& l )
 
 					return e ;
 				}else{
-					return plugins::hmac_key( keyFile,e ) ;
+					return crypto::hmac_key( keyFile,e ) ;
 				}
 			}() ) ;
 		}
@@ -1091,22 +1096,42 @@ static utility::result< QByteArray > _volume_properties( const QString& cmd,
 
 		return e.stdOut() ;
 	}else{
-		for( auto& it : utility::readFavorites() ){
+		for( const auto& it : utility::readFavorites() ){
 
 			if( utility::Task::makePath( it.volumePath ) == path ){
 
-				auto s = utility::Task::makePath( it.configFilePath ) ;
+				auto s = [ & ]{
 
-				if( cmd.endsWith( "gocryptfs" ) ){
+					if( cmd.endsWith( "gocryptfs\"" ) ){
 
-					s += " " + it.volumePath ;
-				}
+						auto a = utility::Task::makePath( it.configFilePath ) ;
+						auto b = utility::Task::makePath( it.volumePath ) ;
+
+						return a + " " + b ;
+
+					}else if( utility::endsWithAtLeastOne( cmd,"encfsctl\"","encfsctl.exe\"" ) ){
+
+						auto s = it.configFilePath ;
+
+						int index = s.lastIndexOf( "/" ) ;
+						if( index != -1 ){
+
+							s.remove( index,s.length() - index ) ;
+						}
+
+						return utility::Task::makePath( s ) ;
+					}else{
+						return utility::Task::makePath( it.configFilePath ) ;
+					}
+				}() ;
 
 				e = utility::Task::run( cmd + args.first + args.second + s ).await() ;
 
 				if( e.success() ){
 
 					return e.stdOut() ;
+				}else{
+					break ;
 				}
 			}
 		}
@@ -1120,7 +1145,7 @@ static void _volume_properties( const QString& cmd,const std::pair<QString,QStri
 {
 	auto exe = utility::executableFullPath( cmd ) ;
 
-	auto path = [ table ](){
+	auto path = [ & ](){
 
 		auto row = table->currentRow() ;
 
@@ -1128,7 +1153,14 @@ static void _volume_properties( const QString& cmd,const std::pair<QString,QStri
 
 			return QString() ;
 		}else{
-			return utility::Task::makePath( table->item( row,0 )->text() ) ;
+			auto m = table->item( row,2 )->text() ;
+
+			if( cmd == "gocryptfs" && m == "gocryptfs-reverse" ){
+
+				return utility::Task::makePath( table->item( row,1 )->text() ) ;
+			}else{
+				return utility::Task::makePath( table->item( row,0 )->text() ) ;
+			}
 		}
 	}() ;
 
@@ -1137,7 +1169,7 @@ static void _volume_properties( const QString& cmd,const std::pair<QString,QStri
 		DialogMsg( w ).ShowUIOK( QObject::tr( "ERROR" ),
 					 QObject::tr( "Failed To Find %1 Executable" ).arg( cmd ) ) ;
 	}else{
-		auto e = _volume_properties( "\"" + exe + "\"",args,path ) ;
+		auto e = _volume_properties( utility::Task::makePath( exe ),args,path ) ;
 
 		if( e ){
 
@@ -1251,11 +1283,11 @@ void sirikali::showContextMenu( QTableWidgetItem * item,bool itemClicked )
 
 				return { SLOT( encfsProperties() ),true } ;
 
-			}else if( e == "gocryptfs" ){
+			}else if( utility::containsAtleastOne( e,"gocryptfs","gocryptfs-reverse" ) ){
 
 				return { SLOT( gocryptfsProperties() ),true } ;
 
-			}else if( e == "sshfs"){
+			}else if( e == "sshfs" ){
 
 				if( utility::platformIsWindows() ){
 
@@ -1373,6 +1405,16 @@ void sirikali::setUpShortCuts()
 
 		return e ;
 	}() ) ;
+
+	this->addAction( _addAction( { Qt::CTRL + Qt::Key::Key_D },SLOT( showDebugWindow() ) ) ) ;
+}
+
+void sirikali::showDebugWindow()
+{
+	if( !m_debugWindow.isVisible() ){
+
+		m_debugWindow.Show() ;
+	}
 }
 
 void sirikali::setUpFont()
