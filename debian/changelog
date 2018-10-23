@@ -1,3 +1,11 @@
+sirikali (1.3.6-1) unstable; urgency=medium
+
+  * New upstream release.
+  * Lintian fixes.
+  * Move cryfs to Recommends.
+
+ -- David Steele <steele@debian.org>  Mon, 22 Oct 2018 20:46:51 -0400
+
 sirikali (1.3.5-1) unstable; urgency=medium
 
   * New upstream release.
