@@ -1,6 +1,11 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: SiriKali
 Source: https://github.com/mhogomchungu/sirikali
+Files-Excluded:
+    libs/lib/libgcrypt.dll.a
+    libs/lib/libgpg-error.dll.a
+    libs/lib/libgcrypt-20.dll
+    libs/lib/libgpg-error-0.dll
 
 Files: *
 Copyright: 2016 Francis Banyikwa <mhogomchungu@gmail.com>

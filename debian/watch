@@ -1,5 +1,5 @@
 # Compulsory line, this is a version 3 file
 version=3
 
-opts=pgpsigurlmangle=s/$/.asc/ \
+opts=pgpsigurlmangle=s/$/.asc/,dversionmangle=s/\+dfsg1//,repacksuffix=+dfsg1 \
 https://github.com/mhogomchungu/sirikali/releases /download/.+/SiriKali-(.*)\.tar\.xz
