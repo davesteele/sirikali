@@ -6,6 +6,7 @@ Files-Excluded:
     libs/lib/libgpg-error.dll.a
     libs/lib/libgcrypt-20.dll
     libs/lib/libgpg-error-0.dll
+    libs/lib/
 
 Files: *
 Copyright: 2016 Francis Banyikwa <mhogomchungu@gmail.com>

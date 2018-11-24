@@ -76,7 +76,7 @@ sirikali (1.3.1-1) unstable; urgency=medium
 
 sirikali (1.3.0-1) unstable; urgency=medium
 
-  * New upstream version. 
+  * New upstream version.
   * Save the source signature in an archivable format.
   * Kill existing sirikali daemon on upgrade.
 
@@ -112,7 +112,7 @@ sirikali (1.2.3-1) unstable; urgency=medium
 sirikali (1.2.2-1) unstable; urgency=medium
 
   * New upstream version.
-  * Update the appstream install directory. 
+  * Update the appstream install directory.
 
  -- David Steele <steele@debian.org>  Fri, 09 Dec 2016 12:39:24 -0500
 
