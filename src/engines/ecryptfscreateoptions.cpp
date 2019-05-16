@@ -20,11 +20,13 @@
 #include "ecryptfscreateoptions.h"
 #include "ui_ecryptfscreateoptions.h"
 
-#include "utility.h"
+#include "../utility.h"
 #include "task.hpp"
 
+#include "../settings.h"
+
 ecryptfscreateoptions::ecryptfscreateoptions( QWidget * parent,
-					std::function< void( const QStringList& ) > function ) :
+					std::function< void( const engines::engine::Options& ) > function ) :
 	QDialog( parent ),
 	m_ui( new Ui::ecryptfscreateoptions ),
 	m_function( std::move( function ) )
@@ -42,6 +44,8 @@ ecryptfscreateoptions::ecryptfscreateoptions( QWidget * parent,
 	m_ui->rbEncryptFileNames->setChecked( true ) ;
 	m_ui->rbDoNotEnablePlainText->setChecked( true ) ;
 
+	m_ui->groupBox->setEnabled( settings::instance().ecryptfsAllowNotEncryptingFileNames() ) ;
+
 	this->show() ;
 }
 
@@ -57,7 +61,7 @@ void ecryptfscreateoptions::pbSelectConfigPath()
 
 void ecryptfscreateoptions::pbOK()
 {
-	QString e = "-o " + ecryptfscreateoptions::defaultMiniCreateOptions() ;
+	QString e = ecryptfscreateoptions::defaultMiniCreateOptions() ;
 
 	if( m_ui->rbDoNotEnablePlainText->isChecked() ){
 
@@ -73,7 +77,7 @@ void ecryptfscreateoptions::pbOK()
 		e += ",ecryptfs_enable_filename_crypto=n" ;
 	}
 
-	this->HideUI( { e,m_ui->lineEdit_2->text() } ) ;
+	this->HideUI( { { e,m_ui->lineEdit_2->text() } } ) ;
 }
 
 void ecryptfscreateoptions::pbCancel()
@@ -81,12 +85,10 @@ void ecryptfscreateoptions::pbCancel()
 	this->HideUI() ;
 }
 
-void ecryptfscreateoptions::HideUI( const QStringList& e )
+void ecryptfscreateoptions::HideUI( const engines::engine::Options& opts )
 {
 	this->hide() ;
-
-	m_function( e ) ;
-
+	m_function( opts ) ;
 	this->deleteLater() ;
 }
 

@@ -20,11 +20,11 @@
 #include "encfscreateoptions.h"
 #include "ui_encfscreateoptions.h"
 
-#include "utility.h"
+#include "../utility.h"
 #include "task.hpp"
 
 encfscreateoptions::encfscreateoptions( QWidget * parent,
-					std::function< void( const QStringList& ) > function ) :
+					std::function< void( const engines::engine::Options& ) > function ) :
 	QDialog( parent ),
 	m_ui( new Ui::encfscreateoptions ),
 	m_function( std::move( function ) )
@@ -36,7 +36,7 @@ encfscreateoptions::encfscreateoptions( QWidget * parent,
 	connect( m_ui->pbOK,SIGNAL( clicked() ),this,SLOT( pbOK() ) ) ;
 	connect( m_ui->pbCancel,SIGNAL( clicked() ),this,SLOT( pbCancel() ) ) ;
 
-	m_ui->label->setText( tr( "Normally EncFS provides a plaintext view of data on demand: it stores enciphered data and displays plaintext data.  With this option set, it takes as source plaintext data and produces enciphered data on-demand. This can be useful for creating remote encrypted backups, where you do not wish to keep the local files unencrypted." ) ) ;
+	m_ui->plainTextEdit->appendPlainText( tr( "Normally EncFS provides a plaintext view of data on demand: it stores enciphered data and displays plaintext data.  With this option set, it takes as source plaintext data and produces enciphered data on-demand. This can be useful for creating remote encrypted backups, where you do not wish to keep the local files unencrypted." ) ) ;
 
 	this->show() ;
 }
@@ -52,17 +52,7 @@ void encfscreateoptions::pbSelectConfigPath()
 
 void encfscreateoptions::pbOK()
 {
-	QString a = [ this ](){
-
-		if( m_ui->checkBox->isChecked() ){
-
-			return utility::reverseModeOption ;
-		}else{
-			return QString() ;
-		}
-	}() ;
-
-	this->HideUI( { a,QString() } ) ;
+	this->HideUI( { m_ui->checkBox->isChecked() } ) ;
 }
 
 void encfscreateoptions::pbCancel()
@@ -70,12 +60,10 @@ void encfscreateoptions::pbCancel()
 	this->HideUI() ;
 }
 
-void encfscreateoptions::HideUI( const QStringList& e )
+void encfscreateoptions::HideUI( const engines::engine::Options& opts )
 {
 	this->hide() ;
-
-	m_function( e ) ;
-
+	m_function( opts ) ;
 	this->deleteLater() ;
 }
 

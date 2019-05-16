@@ -20,10 +20,10 @@
 #include "securefscreateoptions.h"
 #include "ui_securefscreateoptions.h"
 
-#include "utility.h"
+#include "../utility.h"
 
 securefscreateoptions::securefscreateoptions( QWidget * parent,
-					      std::function< void( const QStringList& ) > function ) :
+					      std::function< void( const engines::engine::Options& ) > function ) :
 	QDialog( parent ),
 	m_ui( new Ui::securefscreateoptions ),
 	m_function( std::move( function ) )
@@ -39,6 +39,10 @@ securefscreateoptions::securefscreateoptions( QWidget * parent,
 	m_ui->pbConfigFile->setIcon( QIcon( ":/folder.png" ) ) ;
 
 	m_ui->comboBox->setFocus() ;
+
+	auto s = tr( "The \"lite format\" simply encrypts filenames and file contents separately, similar to how encfs operates, although with more security.\n\nThe \"full format\" maps files, directories and symlinks in the virtual filesystem all to regular files in the underlying filesystem. The directory structure is flattened and recorded as B-trees in files.\n\nThe lite format has become the default on Unix-like operating systems as it is much faster and features easier conflict resolution, especially when used with DropBox, Google Drive, etc. The full format, however, leaks fewer information about the filesystem hierarchy, runs relatively independent of the features of the underlying filesystem, and is in general more secure." ) ;
+
+	m_ui->plainTextEdit->appendPlainText( s ) ;
 
 	this->show() ;
 }
@@ -61,19 +65,15 @@ void securefscreateoptions::pbOK()
 
 	if( m_ui->comboBox->currentIndex() == 1 ){
 
-		m_function( { "--format 2",m_ui->lineEdit->text() } ) ;
+		this->HideUI( { { "--format 2",m_ui->lineEdit->text() } } ) ;
 	}else{
-		m_function( {"--format 4",m_ui->lineEdit->text() } ) ;
+		this->HideUI( { { "--format 4",m_ui->lineEdit->text() } } ) ;
 	}
-
-	this->deleteLater() ;
 }
 
 void securefscreateoptions::pbCancel()
 {
-	this->hide() ;
-	m_function( {} ) ;
-	this->deleteLater() ;
+	this->HideUI() ;
 }
 
 void securefscreateoptions::pbConfigFilePath()
@@ -81,9 +81,10 @@ void securefscreateoptions::pbConfigFilePath()
 	m_ui->lineEdit->setText( utility::configFilePath( this,"securefs" ) ) ;
 }
 
-void securefscreateoptions::HideUI()
+void securefscreateoptions::HideUI( const engines::engine::Options& opts )
 {
 	this->hide() ;
+	m_function( opts ) ;
 	this->deleteLater() ;
 }
 

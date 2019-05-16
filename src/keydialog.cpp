@@ -27,6 +27,7 @@
 #include <QDebug>
 #include <QFile>
 
+#include "win.h"
 #include "options.h"
 #include "dialogmsg.h"
 #include "task.hpp"
@@ -36,6 +37,7 @@
 #include "plugin.h"
 #include "crypto.h"
 #include "configfileoption.h"
+#include "settings.h"
 
 static QString _kwallet()
 {
@@ -74,7 +76,7 @@ keyDialog::keyDialog( QWidget * parent,
 {
 	m_ui->setupUi( this ) ;
 
-	utility::setParent( parent,&m_parentWidget,this ) ;
+	settings::instance().setParent( parent,&m_parentWidget,this ) ;
 	utility::setWindowOptions( this ) ;
 
 	this->setFont( parent->font() ) ;
@@ -120,7 +122,7 @@ keyDialog::keyDialog( QWidget * parent,
 {
 	m_ui->setupUi( this ) ;
 
-	utility::setParent( parent,&m_parentWidget,this ) ;
+	settings::instance().setParent( parent,&m_parentWidget,this ) ;
 	utility::setWindowOptions( this ) ;
 
 	this->setFont( parent->font() ) ;
@@ -151,7 +153,7 @@ void keyDialog::setUpInitUI()
 		m_ui->checkBoxOpenReadOnly->setEnabled( false ) ;
 	}
 
-	m_reUseMountPoint = utility::reUseMountPoint() ;
+	m_reUseMountPoint = settings::instance().reUseMountPoint() ;
 
 	m_checkBoxOriginalText = m_ui->checkBoxOpenReadOnly->text() ;
 
@@ -182,7 +184,25 @@ void keyDialog::setUpInitUI()
 	connect( m_ui->pbSetKeyCancel,SIGNAL( clicked() ),
 		 this,SLOT( pbSetKeyCancel() ) ) ;
 
+	connect( m_ui->pbMountPoint_1,&QPushButton::clicked,[ this ](){
+
+		auto msg = tr( "Select A Folder To Create A Mount Point In." ) ;
+		auto e = utility::getExistingDirectory( this,msg,settings::instance().homePath() ) ;
+
+		if( !e.isEmpty() ){
+
+			while( e.endsWith( "/" ) ){
+
+				e.truncate( e.length() - 1 ) ;
+			}
+
+			m_ui->lineEditMountPoint->setText( e ) ;
+		}
+	} ) ;
+
 	if( m_create ){
+
+		m_ui->pbMountPoint_1->setVisible( false ) ;
 
 		connect( m_ui->lineEditMountPoint,SIGNAL( textChanged( QString ) ),
 			 this,SLOT( textChanged( QString ) ) ) ;
@@ -195,10 +215,10 @@ void keyDialog::setUpInitUI()
 
 			//m_ui->lineEditFolderPath->setText( "Z:" ) ;
 			//utility::setWindowsMountPointOptions( this,m_ui->lineEditFolderPath,m_ui->pbOpenFolderPath ) ;
-			m_ui->lineEditFolderPath->setText( utility::homePath() + "/Desktop/" ) ;
+			m_ui->lineEditFolderPath->setText( settings::instance().homePath() + "/Desktop/" ) ;
 			//m_ui->pbOpenFolderPath->setIcon( QIcon( ":/folder.png" ) ) ;
 		}else{
-			m_ui->lineEditFolderPath->setText( utility::homePath() + "/" ) ;
+			m_ui->lineEditFolderPath->setText( settings::instance().homePath() + "/" ) ;
 		}
 
 		m_ui->lineEditMountPoint->setFocus() ;
@@ -209,9 +229,13 @@ void keyDialog::setUpInitUI()
 	}else{
 		this->windowSetTitle( tr( "Unlocking \"%1\"" ).arg( m_path ) ) ;
 
+		m_ui->pbMountPoint_1->setVisible( utility::platformIsWindows() ) ;
+
 		m_ui->label_2->setText( tr( "Mount Path" ) ) ;
 
 		m_ui->pbMountPoint->setIcon( QIcon( ":/folder.png" ) ) ;
+
+		m_ui->pbMountPoint_1->setIcon( QIcon( ":/folder.png" ) ) ;
 
 		m_ui->lineEditKey->setFocus() ;
 	}
@@ -224,7 +248,7 @@ void keyDialog::setUpInitUI()
 
 	this->setFixedSize( this->size() ) ;
 
-	m_ui->checkBoxOpenReadOnly->setChecked( utility::getOpenVolumeReadOnlyOption() ) ;
+	m_ui->checkBoxOpenReadOnly->setChecked( settings::instance().getOpenVolumeReadOnlyOption() ) ;
 
 	m_ui->lineEditKey->setEchoMode( QLineEdit::Password ) ;
 
@@ -277,7 +301,7 @@ void keyDialog::setUpInitUI()
 
 	m_ui->checkBoxVisibleKey->setToolTip( tr( "Check This Box To Make Password Visible" ) ) ;
 
-	m_ui->checkBoxVisibleKey->setEnabled( utility::enableRevealingPasswords() ) ;
+	m_ui->checkBoxVisibleKey->setEnabled( settings::instance().enableRevealingPasswords() ) ;
 }
 
 void keyDialog::setVolumeToUnlock()
@@ -300,11 +324,26 @@ void keyDialog::setVolumeToUnlock()
 void keyDialog::setUpVolumeProperties( const volumeInfo& e,const QByteArray& key )
 {
 	m_path         = e.volumePath() ;
-
+	m_reverseMode  = e.reverseMode() ;
 	m_configFile   = e.configFilePath() ;
 	m_idleTimeOut  = e.idleTimeOut() ;
 	m_mountOptions = e.mountOptions() ;
 	m_working      = false ;
+
+	m_favoriteReadOnly = e.mountReadOnly() ;
+
+	if( m_favoriteReadOnly ){
+
+		m_ui->checkBoxOpenReadOnly->setChecked( m_favoriteReadOnly.onlyRead() ) ;
+	}else{
+		if( utility::platformIsWindows() ){
+
+			m_ui->checkBoxOpenReadOnly->setEnabled( false ) ;
+		}else{
+			m_ui->checkBoxOpenReadOnly->setEnabled( true ) ;
+			m_ui->checkBoxOpenReadOnly->setChecked( settings::instance().getOpenVolumeReadOnlyOption() ) ;
+		}
+	}
 
 	m_ui->lineEditKey->setText( key ) ;
 
@@ -338,7 +377,18 @@ void keyDialog::setUpVolumeProperties( const volumeInfo& e,const QByteArray& key
 
 			if( m.isEmpty() ){
 
-				return utility::freeWindowsDriveLetter() ;
+				const auto& e = siritask::mountEngine( m_path,m_configFile ).engine ;
+
+				if( settings::instance().windowsUseMountPointPath( e.name() ) ){
+
+					auto mm = settings::instance().windowsMountPointPath() ;
+
+					utility::createFolder( mm ) ;
+
+					return mm + utility::split( m_path,'/' ).last() ;
+				}else{
+					return utility::freeWindowsDriveLetter() ;
+				}
 			}else{
 				return m ;
 			}
@@ -365,12 +415,12 @@ void keyDialog::setUpVolumeProperties( const volumeInfo& e,const QByteArray& key
 
 				if( m.isEmpty() ){
 
-					return utility::mountPath( m_path.split( "/" ).last() ) ;
+					return settings::instance().mountPath( m_path.split( "/" ).last() ) ;
 				}else{
-					return utility::mountPath( m.split( "/" ).last() ) ;
+					return settings::instance().mountPath( m.split( "/" ).last() ) ;
 				}
 			}else{
-				return utility::mountPath( [ &m,this ](){
+				return settings::instance().mountPath( [ &m,this ](){
 
 					if( m.isEmpty() ){
 
@@ -388,12 +438,9 @@ void keyDialog::setDefaultUI()
 {
 	if( m_create ){
 
-		if( utility::equalsAtleastOne( m_exe,"Securefs","Cryfs","Gocryptfs","Ecryptfs","Encfs" ) ){
+		auto e = engines::instance().getByName( m_exe ).hasGUICreateOptions() ;
 
-			m_ui->pbOptions->setEnabled( true ) ;
-		}else{
-			m_ui->pbOptions->setEnabled( false ) ;
-		}
+		m_ui->pbOptions->setEnabled( e ) ;
 
 		m_ui->label_3->setVisible( true ) ;
 
@@ -404,6 +451,8 @@ void keyDialog::setDefaultUI()
 		m_ui->pbOpenFolderPath->setVisible( true ) ;
 
 		m_ui->pbMountPoint->setVisible( false ) ;
+
+		m_ui->pbMountPoint_1->setVisible( false ) ;
 
 		m_ui->lineEditFolderPath->setEnabled( false ) ;
 
@@ -448,86 +497,52 @@ void keyDialog::pbOptions()
 {
 	if( m_create ){
 
-		if( m_exe == "Ecryptfs" ){
+		auto& e = engines::instance().getByName( m_exe ) ;
 
-			this->hide() ;
+		this->hide() ;
 
-			ecryptfscreateoptions::instance( this,[ this ]( const QStringList& e ){
+		e.GUICreateOptionsinstance( m_parentWidget,[ this ]( const engines::engine::Options& e ){
 
-				utility2::stringListToStrings( e,m_createOptions,m_configFile ) ;
+			if( e.success ){
 
-				this->ShowUI() ;
-			} ) ;
+				m_reverseMode = e.reverseMode ;
 
-		}else if( m_exe == "Gocryptfs" ){
+				utility2::stringListToStrings( e.options,m_createOptions,m_configFile ) ;
+			}
 
-			this->hide() ;
-
-			gocryptfscreateoptions::instance( m_parentWidget,[ this ]( const QStringList& e ){
-
-				utility2::stringListToStrings( e,m_createOptions,m_configFile ) ;
-
-				this->ShowUI() ;
-			} ) ;
-
-		}else if( m_exe == "Securefs" ){
-
-			this->hide() ;
-
-			securefscreateoptions::instance( m_parentWidget,[ this ]( const QStringList& e ){
-
-				utility2::stringListToStrings( e,m_createOptions,m_configFile ) ;
-
-				this->ShowUI() ;
-			} ) ;
-
-		}else if( m_exe == "Cryfs" ){
-
-			this->hide() ;
-
-			cryfscreateoptions::instance( m_parentWidget,[ this ]( const QStringList& e ){
-
-				utility2::stringListToStrings( e,m_createOptions,m_configFile ) ;
-
-				this->ShowUI() ;
-			} ) ;
-
-		}else if( m_exe == "Encfs" ){
-
-			this->hide() ;
-
-			encfscreateoptions::instance( m_parentWidget,[ this ]( const QStringList& e ){
-
-				utility2::stringListToStrings( e,m_createOptions,m_configFile ) ;
-
-				this->ShowUI() ;
-			} ) ;
-		}
+			this->ShowUI() ;
+		} ) ;
 	}else{
 		if( !m_checked ){
 
 			m_checked = true ;
 
-			auto f = utility::readFavorite( m_path ) ;
+			auto f = settings::instance().readFavorite( m_path ) ;
 
 			m_idleTimeOut  = f.idleTimeOut ;
 			m_configFile   = f.configFilePath ;
-			m_mountOptions = f.mountOptions ;
+			m_mountOptions = f.sanitizedMountOptions() ;
+			m_reverseMode  = f.reverseMode ;
 		}
 
-		QStringList e{ m_idleTimeOut,m_configFile,m_mountOptions,m_exe } ;
+		options::Options e{ { m_idleTimeOut,m_configFile,m_mountOptions,m_exe },m_reverseMode } ;
 
 		this->hide() ;
 
-		options::instance( m_parentWidget,m_create,e,[ this ]( const QStringList& e ){
+		options::instance( m_parentWidget,m_create,e,[ this ]( const options::Options& e ){
 
-			utility2::stringListToStrings( e,m_idleTimeOut,m_configFile,m_mountOptions ) ;
+			if( e.success ){
 
-			if( m_ui->lineEditKey->text().isEmpty() ){
+				m_reverseMode = e.reverseMode ;
 
-				m_ui->lineEditKey->setFocus() ;
-			}else{
-				m_ui->pbOpen->setFocus() ;
+				utility2::stringListToStrings( e.options,m_idleTimeOut,m_configFile,m_mountOptions ) ;
+
+				if( m_ui->lineEditKey->text().isEmpty() ){
+
+					m_ui->lineEditKey->setFocus() ;
+				}else{
+					m_ui->pbOpen->setFocus() ;
+				}
 			}
 
 			this->ShowUI() ;
@@ -568,11 +583,15 @@ void keyDialog::cbMountReadOnlyStateChanged( int state )
 		return ;
 	}
 
-	auto e = utility::setOpenVolumeReadOnly( this,state == Qt::Checked ) ;
+	if( m_favoriteReadOnly ){
 
-	m_ui->checkBoxOpenReadOnly->setEnabled( false ) ;
+		m_ui->checkBoxOpenReadOnly->setChecked( state == Qt::Checked ) ;
+		return ;
+	}
+
+	auto e = settings::instance().setOpenVolumeReadOnly( this,state == Qt::Checked ) ;
+
 	m_ui->checkBoxOpenReadOnly->setChecked( e ) ;
-	m_ui->checkBoxOpenReadOnly->setEnabled( true ) ;
 
 	if( m_ui->lineEditKey->text().isEmpty() ){
 
@@ -607,7 +626,7 @@ void keyDialog::textChanged( QString e )
 void keyDialog::pbMountPointPath()
 {
 	auto msg = tr( "Select A Folder To Create A Mount Point In." ) ;
-	auto e = utility::getExistingDirectory( this,msg,utility::homePath() ) ;
+	auto e = utility::getExistingDirectory( this,msg,settings::instance().homePath() ) ;
 
 	if( !e.isEmpty() ){
 
@@ -620,7 +639,7 @@ void keyDialog::pbMountPointPath()
 void keyDialog::pbFolderPath()
 {
 	auto msg = tr( "Select A Folder To Create A Mount Point In." ) ;
-	auto e = utility::getExistingDirectory( this,msg,utility::homePath() ) ;
+	auto e = utility::getExistingDirectory( this,msg,settings::instance().homePath() ) ;
 
 	if( !e.isEmpty() ){
 
@@ -633,6 +652,7 @@ void keyDialog::pbFolderPath()
 void keyDialog::enableAll()
 {
 	m_ui->pbMountPoint->setEnabled( true ) ;
+	m_ui->pbMountPoint_1->setEnabled( true ) ;
         m_ui->pbOptions->setEnabled( true ) ;
 	m_ui->label_2->setEnabled( true ) ;
 	m_ui->pbOpenFolderPath->setEnabled( true ) ;
@@ -649,7 +669,7 @@ void keyDialog::enableAll()
 
 	m_ui->pbkeyOption->setEnabled( enable ) ;
 
-	if( utility::enableRevealingPasswords() ){
+	if( settings::instance().enableRevealingPasswords() ){
 
 		m_ui->checkBoxVisibleKey->setEnabled( index == keyDialog::Key ) ;
 	}
@@ -668,6 +688,7 @@ void keyDialog::disableAll()
 {
 	m_ui->checkBoxVisibleKey->setEnabled( false ) ;
 	m_ui->pbMountPoint->setEnabled( false ) ;
+	m_ui->pbMountPoint_1->setEnabled( false ) ;
 	m_ui->cbKeyType->setEnabled( false ) ;
 	m_ui->pbOptions->setEnabled( false ) ;
 	m_ui->pbkeyOption->setEnabled( false ) ;
@@ -702,12 +723,24 @@ void keyDialog::setUIVisible( bool e )
 	if( e ){
 
 		m_ui->pbMountPoint->setVisible( !m_create ) ;
+
+		if( utility::platformIsWindows() ){
+
+			m_ui->pbMountPoint_1->setVisible( !m_create ) ;
+		}
+
 		m_ui->label_3->setVisible( m_create ) ;
 		m_ui->checkBoxOpenReadOnly->setVisible( !m_create ) ;
 		m_ui->lineEditFolderPath->setVisible( m_create ) ;
 		m_ui->pbOpenFolderPath->setVisible( m_create ) ;
 	}else{
 		m_ui->pbMountPoint->setVisible( e ) ;
+
+		if( utility::platformIsWindows() ){
+
+			m_ui->pbMountPoint_1->setVisible( e ) ;
+		}
+
 		m_ui->label_3->setVisible( e ) ;
 		m_ui->checkBoxOpenReadOnly->setVisible( e ) ;
 		m_ui->lineEditFolderPath->setVisible( e ) ;
@@ -720,7 +753,7 @@ void keyDialog::KeyFile()
 	if( m_ui->cbKeyType->currentIndex() == keyDialog::keyfile ){
 
 		auto msg = tr( "Select A File To Be Used As A Keyfile." ) ;
-		auto e = QFileDialog::getOpenFileName( this,msg,utility::homePath() ) ;
+		auto e = QFileDialog::getOpenFileName( this,msg,settings::instance().homePath() ) ;
 
 		if( !e.isEmpty() ){
 
@@ -734,7 +767,7 @@ void keyDialog::KeyFile()
 void keyDialog::pbkeyOption()
 {
 	auto msg = tr( "Select A File To Be Used As A Keyfile." ) ;
-	auto e = QFileDialog::getOpenFileName( this,msg,utility::homePath() ) ;
+	auto e = QFileDialog::getOpenFileName( this,msg,settings::instance().homePath() ) ;
 
 	if( !e.isEmpty() ){
 
@@ -851,143 +884,22 @@ void keyDialog::pbOpen()
 
 void keyDialog::openMountPoint( const QString& m )
 {
-	if( utility::autoOpenFolderOnMount() ){
+	if( settings::instance().autoOpenFolderOnMount() ){
 
 		utility::Task::exec( m_fileManagerOpen + " " + utility::Task::makePath( m ) ) ;
 	}
 }
 
-void keyDialog::reportErrorMessage( const siritask::cmdStatus& s )
+void keyDialog::reportErrorMessage( const engines::engine::cmdStatus& s )
 {
-	QString msg ;
-
-	if( s == siritask::status::cryfsMigrateFileSystem ){
+	if( s == engines::engine::status::cryfsMigrateFileSystem ){
 
 		m_ui->checkBoxOpenReadOnly->setText( tr( "Upgrade File System" ) ) ;
 	}else{
 		m_ui->checkBoxOpenReadOnly->setText( m_checkBoxOriginalText ) ;
-	}
+	}	
 
-	switch( s.status() ){
-
-	case siritask::status::success :
-
-		/*
-		 * Should not get here
-		 */
-
-	case siritask::status::volumeCreatedSuccessfully :
-
-		msg = tr( "Volume Created Successfully." ) ;
-		break ;
-
-	case siritask::status::cryfs :
-
-		msg = tr( "Failed To Unlock A Cryfs Volume.\nWrong Password Entered." ) ;
-		break;
-
-	case siritask::status::sshfs :
-
-		msg = tr( "Failed To Connect To The Remote Computer.\nWrong Password Entered." ) ;
-		break;
-
-	case siritask::status::encfs :
-
-		msg = tr( "Failed To Unlock An Encfs Volume.\nWrong Password Entered." ) ;
-		break;
-
-	case siritask::status::gocryptfs :
-
-		msg = tr( "Failed To Unlock A Gocryptfs Volume.\nWrong Password Entered." ) ;
-		break;
-
-	case siritask::status::ecryptfs :
-
-		msg = tr( "Failed To Unlock An Ecryptfs Volume.\nWrong Password Entered." ) ;
-		break;
-
-	case siritask::status::ecryptfsIllegalPath :
-
-		msg = tr( "A Space Character Is Not Allowed In Paths When Using Ecryptfs Backend And Polkit." ) ;
-		break;
-
-	case siritask::status::ecrypfsBadExePermissions :
-
-		msg = tr( "This Backend Requires Root's Privileges And An attempt To Acquire Them Has Failed." ) ;
-		break;
-
-	case siritask::status::securefs :
-
-		msg = tr( "Failed To Unlock A Securefs Volume.\nWrong Password Entered." ) ;
-		break;
-
-	case siritask::status::sshfsNotFound :
-
-		msg = tr( "Failed To Complete The Request.\nSshfs Executable Could Not Be Found." ) ;
-		break;
-
-	case siritask::status::backEndDoesNotSupportCustomConfigPath :
-
-		msg = tr( "Backend Does Not Support Custom Configuration File Path." ) ;
-		break;
-
-	case siritask::status::cryfsNotFound :
-
-		msg = tr( "Failed To Complete The Request.\nCryfs Executable Could Not Be Found." ) ;
-		break;
-
-	case siritask::status::cryfsMigrateFileSystem :
-
-		msg = tr( "This Volume Of Cryfs Needs To Be Upgraded To Work With The Version Of Cryfs You Are Using.\n\nThe Upgrade is IRREVERSIBLE And The Volume Will No Longer Work With Older Versions of Cryfs.\n\nTo Do The Upgrade, Check The \"Upgrade File System\" Option And Unlock The Volume Again." ) ;
-
-		break;
-
-	case siritask::status::encfsNotFound :
-
-		msg = tr( "Failed To Complete The Request.\nEncfs Executable Could Not Be Found." ) ;
-		break;
-
-	case siritask::status::ecryptfs_simpleNotFound :
-
-		msg = tr( "Failed To Complete The Request.\nEcryptfs-simple Executable Could Not Be Found." ) ;
-		break;
-
-	case siritask::status::gocryptfsNotFound :
-
-		msg = tr( "Failed To Complete The Request.\nGocryptfs Executable Could Not Be Found." ) ;
-		break;
-
-	case siritask::status::securefsNotFound :
-
-		msg = tr( "Failed To Complete The Request.\nSecurefs Executable Could Not Be Found." ) ;
-		break;
-
-	case siritask::status::failedToCreateMountPoint :
-
-		msg = tr( "Failed To Create Mount Point." ) ;
-		break;
-
-	case siritask::status::failedToLoadWinfsp :
-
-		msg = tr( "Backend Could Not Load WinFsp. Please Make Sure You Have WinFsp Properly Installed" ) ;
-		break;
-
-	case siritask::status::unknown :
-
-		msg = tr( "Failed To Unlock The Volume.\nNot Supported Volume Encountered." ) ;
-		break;
-
-	case siritask::status::backendFail :
-	default:
-		msg = [ & ](){
-
-			auto e = tr( "Failed To Complete The Task And Below Log was Generated By The Backend.\n" ) ;
-
-			return e + "\n----------------------------------------\n" + s.msg() ;
-		}() ;
-	}
-
-	this->showErrorMessage( { s,msg } ) ;
+	this->showErrorMessage( s ) ;
 }
 
 void keyDialog::showErrorMessage( const QString& e )
@@ -999,18 +911,18 @@ void keyDialog::showErrorMessage( const QString& e )
 	m_ui->pbOK->setFocus() ;
 }
 
-void keyDialog::showErrorMessage( const siritask::cmdStatus& e )
+void keyDialog::showErrorMessage( const engines::engine::cmdStatus& e )
 {
-	if( e == siritask::status::backendFail ){
+	if( e == engines::engine::status::backendFail ){
 
 		this->setUIVisible( false ) ;
 
 		m_ui->textEdit->setVisible( true ) ;
 		m_ui->labelMsg->setVisible( false ) ;
 
-		m_ui->textEdit->setText( e.msg() ) ;
+		m_ui->textEdit->setText( e.toString() ) ;
 	}else{
-		this->showErrorMessage( e.msg() ) ;
+		this->showErrorMessage( e.toString() ) ;
 	}
 }
 
@@ -1042,7 +954,7 @@ void keyDialog::encryptedFolderCreate()
 {
 	auto path = m_ui->lineEditFolderPath->text() ;
 
-	auto m = path.split( '/' ).last() ;
+	auto m = utility::split( path,'/' ).last() ;
 
 	if( utility::pathExists( path ) ){
 
@@ -1053,16 +965,36 @@ void keyDialog::encryptedFolderCreate()
 
 	if( utility::platformIsWindows() ){
 
-		m = utility::freeWindowsDriveLetter() ;
+		if( settings::instance().windowsUseMountPointPath( m_exe.toLower() ) ){
 
-		if( utility::pathExists( m ) ){
+			m = settings::instance().windowsMountPointPath() + m ;
 
-			this->showErrorMessage( tr( "Mount Point Path Already Taken." ) ) ;
+			if( SiriKali::Windows::mountPointTaken( m ) ){
 
-			return this->enableAll() ;
+				this->showErrorMessage( tr( "Mount Point Path Already Taken." ) ) ;
+
+				return this->enableAll() ;
+			}
+
+			if( utility::pathExists( m ) && utility::folderNotEmpty( m ) ){
+
+				this->showErrorMessage( tr( "Mount Point Path Already Taken." ) ) ;
+
+				return this->enableAll() ;
+			}
+		}else{
+			m = utility::freeWindowsDriveLetter() ;
+
+			if( utility::pathExists( m ) ){
+
+				this->showErrorMessage( tr( "Mount Point Path Already Taken." ) ) ;
+
+				return this->enableAll() ;
+			}
 		}
+
 	}else{
-		m = utility::mountPath( utility::mountPathPostFix( m ) ) ;
+		m = settings::instance().mountPath( utility::mountPathPostFix( m ) ) ;
 
 		if( utility::pathExists( m ) && !m_reUseMountPoint ){
 
@@ -1083,31 +1015,35 @@ void keyDialog::encryptedFolderCreate()
 		return ;
 	}
 
-	if( m_exe == "Ecryptfs" ){
-
-		if( m_createOptions.isEmpty() ){
-
-			m_createOptions = "-o " + ecryptfscreateoptions::defaultCreateOptions() ;
-		}
-	}
-
 	m_working = true ;
 
-	siritask::options s{ path,m,m_key,m_idleTimeOut,m_configFile,
-			     m_exe.toLower(),false,m_mountOptions,m_createOptions } ;
+	engines::engine::options s( path,
+				    m,
+				    m_key,
+				    m_idleTimeOut,
+				    m_configFile,
+				    m_exe.toLower(),
+				    false,
+				    m_reverseMode,
+				    m_mountOptions,
+				    m_createOptions ) ;
 
-	auto e = siritask::encryptedFolderCreate( s ).await() ;
+	m_cryfsWarning.showCreate( m_exe.toLower() ) ;
+
+	auto e = siritask::encryptedFolderCreate( s ) ;
+
+	m_cryfsWarning.hide() ;
 
 	m_working = false ;
 
-	if( e == siritask::status::success ){
+	if( e == engines::engine::status::success ){
 
 		this->openMountPoint( m ) ;
 		this->HideUI() ;
 	}else{
 		this->reportErrorMessage( e ) ;
 
-		if( e == siritask::status::volumeCreatedSuccessfully ){
+		if( e == engines::engine::status::volumeCreatedSuccessfully ){
 
 			m_closeGUI = true ;
 		}else{
@@ -1125,7 +1061,9 @@ void keyDialog::encryptedFolderCreate()
 
 void keyDialog::pbSetKeyKeyFile()
 {
-	m_ui->lineEditSetKeyKeyFile->setText( QFileDialog::getOpenFileName( this,tr( "KeyFile" ),utility::homePath(),nullptr ) ) ;
+	auto m = settings::instance().homePath() ;
+	auto a = QFileDialog::getOpenFileName( this,tr( "KeyFile" ),m,nullptr ) ;
+	m_ui->lineEditSetKeyKeyFile->setText( a ) ;
 }
 
 void keyDialog::pbSetKey()
@@ -1141,7 +1079,7 @@ void keyDialog::pbSetKey()
 
 			return crypto::hmac_key( keyFile,passphrase ) ;
 		}else{
-			auto exe = utility::externalPluginExecutable() ;
+			auto exe = settings::instance().externalPluginExecutable() ;
 
 			if( exe.isEmpty() ){
 
@@ -1149,11 +1087,7 @@ void keyDialog::pbSetKey()
 			}else{
 				exe = exe + " " + utility::Task::makePath( keyFile ) ;
 
-				auto env = utility::systemEnvironment() ;
-
-				env.insert( "LANG","C" ) ;
-
-				env.insert( "PATH",utility::executableSearchPaths( env.value( "PATH" ) ) ) ;
+				const auto& env = utility::systemEnvironment() ;
 
 				return utility::Task( exe,20000,env,passphrase.toLatin1() ).stdOut() ;
 			}
@@ -1235,9 +1169,32 @@ void keyDialog::encryptedFolderMount()
 
 	if( utility::pathExists( m ) && !m_reUseMountPoint ){
 
-		this->showErrorMessage( tr( "Mount Point Path Already Taken." ) ) ;
+		if( utility::platformIsWindows() ){
 
-		return this->enableAll() ;
+			settings::instance().reUseMountPoint( true ) ;
+			m_reUseMountPoint = true ;
+		}else{
+			this->showErrorMessage( tr( "Mount Point Path Already Taken." ) ) ;
+
+			return this->enableAll() ;
+		}
+	}
+
+	if( utility::platformIsWindows() ){
+
+		if( SiriKali::Windows::mountPointTaken( m ) ){
+
+			this->showErrorMessage( tr( "Mount Point Path Already Taken." ) ) ;
+
+			return this->enableAll() ;
+		}
+
+		if( !utility::isDriveLetter( m ) && utility::folderNotEmpty( m ) ){
+
+			this->showErrorMessage( tr( "Mount Point Path Is Not Empty." ) ) ;
+
+			return this->enableAll() ;
+		}
 	}
 
 	if( !m_path.startsWith( "sshfs " ) ){
@@ -1279,13 +1236,26 @@ void keyDialog::encryptedFolderMount()
 
 	m_working = true ;
 
-	siritask::options s{ m_path,m,m_key,m_idleTimeOut,m_configFile,m_exe,ro,m_mountOptions,QString() } ;
+	engines::engine::options s{ m_path,
+				    m,
+				    m_key,
+				    m_idleTimeOut,
+				    m_configFile,
+				    m_exe,
+				    ro,
+				    m_reverseMode,
+				    m_mountOptions,
+				    QString() } ;
 
-	auto e = siritask::encryptedFolderMount( s ).await() ;
+	m_cryfsWarning.showUnlock( siritask::mountEngine( m_path,m_configFile ).engine.name() ) ;
+
+	auto e = siritask::encryptedFolderMount( s ) ;
+
+	m_cryfsWarning.hide() ;
 
 	m_working = false ;
 
-	if( e == siritask::status::success ){
+	if( e == engines::engine::status::success ){
 
 		this->openMountPoint( m ) ;
 
@@ -1395,7 +1365,7 @@ void keyDialog::cbActicated( QString e )
 
 	auto _showVisibleKeyOption = [ this ]( bool e ){
 
-		bool s = utility::enableRevealingPasswords() ;
+		bool s = settings::instance().enableRevealingPasswords() ;
 		m_ui->checkBoxVisibleKey->setEnabled( e && s ) ;
 		m_ui->checkBoxVisibleKey->setChecked( false ) ;
 		m_ui->checkBoxVisibleKey->setVisible( e ) ;
@@ -1576,6 +1546,7 @@ void keyDialog::pbCancel()
 
 void keyDialog::ShowUI()
 {
+	m_cryfsWarning.setWarningLabel( m_ui->cryfsWarning ) ;
 	this->show() ;
 	this->raise() ;
 	this->activateWindow() ;

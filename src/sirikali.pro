@@ -10,6 +10,7 @@ SOURCES += \
     dialogok.cpp \
     checkforupdates.cpp \
     favorites.cpp \
+    favorites2.cpp \
     oneinstance.cpp \
     utility.cpp  \
     sirikali.cpp  \
@@ -22,28 +23,31 @@ SOURCES += \
     readonlywarning.cpp \
     walletconfiginput.cpp \
     dialogmsg.cpp \
-    gocryptfscreateoptions.cpp \
+    engines/gocryptfscreateoptions.cpp \
     monitor_mountinfo.cpp \
     tablewidget.cpp \
     options.cpp \
-    securefscreateoptions.cpp \
-    cryfscreateoptions.cpp \
+    engines/securefscreateoptions.cpp \
+    engines/cryfscreateoptions.cpp \
     configfileoption.cpp \
     help.cpp \
     configoptions.cpp \
-    ecryptfscreateoptions.cpp \
-    encfscreateoptions.cpp
+    engines/ecryptfscreateoptions.cpp \
+    engines/encfscreateoptions.cpp \
+    settings.cpp \
+    engines.cpp
 
 HEADERS += \
-    securefscreateoptions.h \
-    ecryptfscreateoptions.h \
-    cryfscreateoptions.h \
+    engines/securefscreateoptions.h \
+    engines/ecryptfscreateoptions.h \
+    engines/cryfscreateoptions.h \
     dialogok.h \
     configoptions.h \
-    gocryptfscreateoptions.h \
+    engines/gocryptfscreateoptions.h \
     configfileoption.h \
     checkforupdates.h \
     favorites.h \
+    favorites2.h \
     filemanager.h \
     oneinstance.h \
     utility.h  \
@@ -51,7 +55,7 @@ HEADERS += \
     keydialog.h  \
     plugin.h   \
     help.h \
-    encfscreateoptions \
+    engines/encfscreateoptions \
     walletconfig.h   \
     siritask.h  \
     readonlywarning.h \
@@ -70,19 +74,20 @@ HEADERS += \
     3rdParty/lxqt_wallet/frontend/changepassworddialog.h
 
 FORMS += \
-    securefscreateoptions.ui \
-    ecryptfscreateoptions.ui \
-    cryfscreateoptions.ui \
+    engines/securefscreateoptions.ui \
+    engines/ecryptfscreateoptions.ui \
+    engines/cryfscreateoptions.ui \
     dialogok.ui \
     sirikali.ui \
-    gocryptfscreateoptions.ui \
+    engines/gocryptfscreateoptions.ui \
     configoptions.ui \
     configfileoption.ui \
     favorites.ui \
+    favorites2.ui \
     filemanager.ui \
     plugin.ui \
     help.ui \
-    encfscreateoptions.ui \
+    engines/encfscreateoptions.ui \
     walletconfiginput.ui \
     dialogmsg.ui \
     keydialog.ui \
@@ -97,5 +102,6 @@ TRANSLATIONS = ../translations/en_US.ts \
                ../translations/fr_FR.ts \
                ../translations/es_MX.ts \
                ../translations/ar_SA.ts \
-               ../translations/de_DE.ts
+               ../translations/de_DE.ts \
+               ../translations/ru_RU.ts
 

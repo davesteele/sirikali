@@ -28,6 +28,8 @@
 #include <QStringList>
 #include <QDialog>
 
+#include "../engines.h"
+
 namespace Ui {
 class securefscreateoptions;
 }
@@ -36,21 +38,21 @@ class securefscreateoptions : public QDialog
 {
 	Q_OBJECT
 public:
-	static void instance( QWidget * parent,std::function< void( const QStringList& ) > function )
+	static void instance( QWidget * parent,std::function< void( const engines::engine::Options& ) > function )
 	{
 		new securefscreateoptions( parent,std::move( function ) ) ;
 	}
-	explicit securefscreateoptions( QWidget * parent,std::function< void( const QStringList& ) > ) ;
+	explicit securefscreateoptions( QWidget * parent,std::function< void( const engines::engine::Options& ) > ) ;
 	~securefscreateoptions() ;
 private slots:
 	void pbOK() ;
 	void pbCancel() ;
 	void pbConfigFilePath() ;
 private:
-	void HideUI() ;
+	void HideUI( const engines::engine::Options& = engines::engine::Options() ) ;
 	void closeEvent( QCloseEvent * ) ;
 	Ui::securefscreateoptions * m_ui ;
-	std::function< void( const QStringList& ) > m_function ;
+	std::function< void( const engines::engine::Options& ) > m_function ;
 };
 
 #endif // SECUREFSCREATEOPTIONS_H

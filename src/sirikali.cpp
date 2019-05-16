@@ -59,14 +59,18 @@
 #include "crypto.h"
 #include "help.h"
 #include "configoptions.h"
-#include "winfsp.h"
+#include "win.h"
 #include "json.h"
+#include "settings.h"
+#include "engines.h"
+
+#include "favorites2.h"
 
 static utility::volumeList _readFavorites()
 {
 	utility::volumeList e ;
 
-	for( auto&& it : utility::readFavorites() ){
+	for( auto&& it : settings::instance().readFavorites() ){
 
 		e.emplace_back( std::move( it ),QByteArray() ) ;
 	}
@@ -79,9 +83,19 @@ sirikali::sirikali() :
 	m_mountInfo( this,true,[ & ](){ QCoreApplication::exit( m_exitStatus ) ; } ),
 	m_checkUpdates( this ),
 	m_configOptions( this,m_secrets,&m_language_menu,this->configOption() ),
-	m_debugWindow()
+	m_debugWindow(),
+	m_signalHandler( this,this->getEmergencyShutDown() )
 {
-	utility::setDebugWindow( &m_debugWindow ) ;
+}
+
+std::function< void( systemSignalHandler::signal ) > sirikali::getEmergencyShutDown()
+{
+	return [ this ]( systemSignalHandler::signal s ){
+
+		Q_UNUSED( s ) ;
+
+		this->emergencyShutDown() ;
+	} ;
 }
 
 configOptions::functions sirikali::configOption()
@@ -89,12 +103,12 @@ configOptions::functions sirikali::configOption()
 	auto a = [ this ](){
 
 		this->enableAll() ;
-		m_folderOpener = utility::fileManager() ;
+		m_folderOpener = settings::instance().fileManager() ;
 	} ;
 
 	auto b = [ this ]( QAction * ac ){
 
-		utility::languageMenu( &m_language_menu,ac,m_translator ) ;
+		settings::instance().languageMenu( &m_language_menu,ac,m_translator ) ;
 
 		m_ui->retranslateUi( this ) ;
 
@@ -107,6 +121,11 @@ configOptions::functions sirikali::configOption()
 
 			it.first->setTitle( tr( it.second ) ) ;
 		}
+
+		for( auto& it : m_language_menu.actions() ){
+
+			it->setText( m_translator.translate( it->objectName() ) ) ;
+		}
 	} ;
 
 	return { std::move( a ),std::move( b ) } ;
@@ -114,9 +133,9 @@ configOptions::functions sirikali::configOption()
 
 void sirikali::closeApplication( int s,const QString& e )
 {
-	if( utility::platformIsWindows() && m_ui ){
+	if( utility::platformIsWindows() && m_ui && !m_emergencyShuttingDown ){
 
-		if( SiriKali::Winfsp::babySittingBackends() && m_ui->tableWidget->rowCount() > 0 ){
+		if( m_ui->tableWidget->rowCount() > 0 ){
 
 			auto m = tr( "Close All Volumes Before Quitting The Application" ) ;
 			return DialogMsg( this ).ShowUIOK( tr( "WARNING" ),m ) ;
@@ -136,7 +155,11 @@ void sirikali::closeApplication( int s,const QString& e )
 
 		m_debugWindow.Hide() ;
 		this->hide() ;
-		utility::Task::suspendForOneSecond() ;
+
+		if( !m_emergencyShuttingDown ){
+
+			utility::waitForOneSecond() ;
+		}
 	}
 
 	m_mountInfo.stop() ;
@@ -145,6 +168,8 @@ void sirikali::closeApplication( int s,const QString& e )
 void sirikali::setUpApp( const QString& volume )
 {
 	this->setLocalizationLanguage( true ) ;
+
+	m_signalHandler.listen() ;
 
 	m_ui = new Ui::sirikali ;
 	m_ui->setupUi( this ) ;
@@ -159,7 +184,7 @@ void sirikali::setUpApp( const QString& volume )
 
 	auto table = m_ui->tableWidget ;
 
-	const auto dimensions = utility::getWindowDimensions() ;
+	const auto dimensions = settings::instance().getWindowDimensions() ;
 
 	this->window()->setGeometry( dimensions.geometry() ) ;
 
@@ -207,42 +232,25 @@ void sirikali::setUpApp( const QString& volume )
 		connect( m,SIGNAL( triggered( QAction * ) ),
 			 this,SLOT( createVolume( QAction * ) ) ) ;
 
-		auto _enable = []( QAction * ac,const QString& exe ){
+		const auto& engines = engines::instance() ;
 
-			ac->setObjectName( exe ) ;
+		for( const auto& it : engines.supported() ){
 
-			if( utility::executableFullPath( exe.toLower() ).isEmpty() ){
+			auto ac = m->addAction( it ) ;
+
+			ac->setObjectName( it ) ;
+
+			if( engines.getByName( it ).isNotInstalled() ){
 
 				ac->setEnabled( false ) ;
 
-				if( exe == "Ecryptfs" ){
+				if( it == "Ecryptfs" ){
 
 					ac->setText( tr( "%1 Is Not Installed" ).arg( "Ecryptfs-simple" ) ) ;
 				}else{
-					ac->setText( tr( "%1 Is Not Installed" ).arg( exe ) ) ;
+					ac->setText( tr( "%1 Is Not Installed" ).arg( it ) ) ;
 				}
 			}
-		} ;
-
-		if( utility::platformIsWindows() ){
-
-			_enable( m->addAction( "Encfs" ),"Encfs" ) ;
-			_enable( m->addAction( "Securefs" ),"Securefs" ) ;
-			_enable( m->addAction( "Sshfs" ),"Sshfs" ) ;
-
-		}else if( utility::platformIsOSX() ){
-
-			_enable( m->addAction( "Cryfs" ),"Cryfs" ) ;
-			_enable( m->addAction( "Gocryptfs" ),"Gocryptfs" ) ;
-			_enable( m->addAction( "Securefs" ),"Securefs" ) ;
-			_enable( m->addAction( "Encfs" ),"Encfs" ) ;
-		}else{
-			_enable( m->addAction( "Cryfs" ),"Cryfs" ) ;
-			_enable( m->addAction( "Gocryptfs" ),"Gocryptfs" ) ;
-			_enable( m->addAction( "Securefs" ),"Securefs" ) ;
-			_enable( m->addAction( "Encfs" ),"Encfs" ) ;
-			_enable( m->addAction( "Ecryptfs" ),"Ecryptfs" ) ;
-			_enable( m->addAction( "Sshfs" ),"Sshfs" ) ;
 		}
 
 		return m ;
@@ -281,7 +289,7 @@ void sirikali::setUpApp( const QString& volume )
 
 	this->startGUI( m ) ;
 
-	QTimer::singleShot( utility::checkForUpdateInterval(),this,SLOT( autoUpdateCheck() ) ) ;
+	QTimer::singleShot( settings::instance().checkForUpdateInterval(),this,SLOT( autoUpdateCheck() ) ) ;
 
 	if( utility::debugEnabled() || utility::debugFullEnabled() ){
 
@@ -307,7 +315,7 @@ void sirikali::showTrayIcon()
 
 			return _show_tray() ;
 		}else{
-			utility::Task::suspendForOneSecond() ;
+			utility::waitForOneSecond();
 		}
 	}
 
@@ -435,23 +443,70 @@ void sirikali::autoUpdateCheck()
 	m_checkUpdates.run( true ) ;
 }
 
+static void _connect_to_ssh_server( QWidget * parent,const favorites::entry& entry )
+{
+	auto s = siritask::encryptedFolderMount( entry ) ;
+
+	if( s == engines::engine::status::sshfsNotFound ){
+
+		auto e = QObject::tr( "Failed To Complete The Request.\nSshfs Executable Could Not Be Found." ) ;
+
+		DialogMsg( parent ).ShowUIOK( QObject::tr( "ERROR" ),e ) ;
+
+	}else if( s != engines::engine::status::success ){
+
+		auto e = QObject::tr( "Failed To Connect To \"%1\" And Below Log was Generated By The Backend.\n" ).arg( entry.volumePath ) ;
+
+		e += "\n----------------------------------------\n" + s.toMiniString() ;
+
+		DialogMsg( parent ).ShowUIOK( QObject::tr( "ERROR" ),e ) ;
+	}
+}
+
 void sirikali::favoriteClicked( QAction * ac )
 {
 	auto e = ac->objectName() ;
 
 	if( e == "Manage Favorites" ){
 
-		favorites::instance( this ) ;
+		favorites2::instance( this ) ;
+		//favorites::instance( this ) ;
 	}else{
 		if( e == "Mount All" ){
 
 			this->mountMultipleVolumes( _readFavorites() ) ;
 		}else{
+			QString volumePath ;
+			QString mountPointPath ;
+
+			utility2::stringListToStrings( utility::split( e ),volumePath,mountPointPath ) ;
+
+			auto _found = [ & ]( const std::pair< favorites::entry,QByteArray >& e ){
+
+				const auto& s = e.first ;
+
+				if( mountPointPath.isEmpty() ){
+
+					return s.volumePath == volumePath ;
+				}else{
+					return s.volumePath == volumePath && s.mountPointPath == mountPointPath ;
+				}
+			} ;
+
 			for( auto&& it : _readFavorites() ){
 
-				if( it.first.volumePath == e ){
+				if( _found( it ) ){
 
-					this->mountMultipleVolumes( this->autoUnlockVolumes( { std::move( it ) },true ) ) ;
+					if( it.first.volumeNeedNoPassword && it.first.volumePath.startsWith( "sshfs " ) ){
+
+						this->disableAll() ;
+
+						_connect_to_ssh_server( this,it.first ) ;
+
+						this->enableAll() ;
+					}else{
+						this->mountMultipleVolumes( this->autoUnlockVolumes( { std::move( it ) },true ) ) ;
+					}
 
 					break ;
 				}
@@ -462,12 +517,12 @@ void sirikali::favoriteClicked( QAction * ac )
 
 void sirikali::showFavorites()
 {
-	utility::readFavorites( m_ui->pbFavorites->menu() ) ;
+	settings::instance().readFavorites( m_ui->pbFavorites->menu() ) ;
 }
 
 void sirikali::setLocalizationLanguage( bool translate )
 {
-	utility::setLocalizationLanguage( translate,&m_language_menu,m_translator ) ;
+	settings::instance().setLocalizationLanguage( translate,&m_language_menu,m_translator ) ;
 }
 
 void sirikali::startGUI( const std::vector< volumeInfo >& m )
@@ -477,7 +532,7 @@ void sirikali::startGUI( const std::vector< volumeInfo >& m )
 		this->raiseWindow() ;
 	}
 
-	if( utility::autoMountFavoritesOnStartUp() ){
+	if( settings::instance().autoMountFavoritesOnStartUp() ){
 
 		this->autoUnlockVolumes( m ) ;
 	}
@@ -506,7 +561,7 @@ int sirikali::start( QApplication& e )
 
 			s.replace( "terminateProcess-","" ) ;
 
-			return SiriKali::Winfsp::terminateProcess( s.toULong() ) ;
+			return SiriKali::Windows::terminateProcess( s.toULong() ) ;
 		}
 	}
 
@@ -536,10 +591,10 @@ void sirikali::start( const QStringList& l )
 
 	if( !m_startHidden ){
 
-		m_startHidden = utility::startMinimized() ;
+		m_startHidden = settings::instance().startMinimized() ;
 	}
 
-	m_folderOpener = utility::cmdArgumentValue( l,"-m",utility::fileManager() ) ;
+	m_folderOpener = utility::cmdArgumentValue( l,"-m",settings::instance().fileManager() ) ;
 
 	auto _cliCommand = [ & ](){
 
@@ -615,7 +670,7 @@ void sirikali::cliCommand( const QStringList& l )
 
 			if( a == volume || b == volume ){
 
-				if( siritask::encryptedFolderUnMount( a,b,c ).await() ){
+				if( siritask::encryptedFolderUnMount( a,b,c ) ){
 
 					siritask::deleteMountFolder( b ) ;
 
@@ -656,6 +711,7 @@ void sirikali::unlockVolume( const QStringList& l )
 	auto cPath     = utility::cmdArgumentValue( l,"-c" ) ;
 	auto keyFile   = utility::cmdArgumentValue( l,"-f" ) ;
 	auto mOpt      = utility::cmdArgumentValue( l,"-o" ) ;
+	auto reverse   = l.contains( "-r" ) ;
 
 	if( vol.isEmpty() ){
 
@@ -669,7 +725,7 @@ void sirikali::unlockVolume( const QStringList& l )
 
 					auto e = utility::mountPathPostFix( volume.split( "/" ).last() ) ;
 
-					return utility::mountPath( e ) ;
+					return settings::instance().mountPath( e ) ;
 				}else{
 					return mountPath ;
 				}
@@ -677,11 +733,11 @@ void sirikali::unlockVolume( const QStringList& l )
 
 			m_mountInfo.announceEvents( false ) ;
 
-			siritask::options s = { volume,m,key,idleTime,cPath,QString(),mode,mOpt,QString() } ;
+			engines::engine::options s( volume,m,key,idleTime,cPath,QString(),mode,reverse,mOpt,QString() ) ;
 
-			auto& e = siritask::encryptedFolderMount( s ) ;
+			auto e = siritask::encryptedFolderMount( s ) ;
 
-			if( e.await() == siritask::status::success ){
+			if( e == engines::engine::status::success ){
 
 				//this->openMountPointPath( m ) ;
 
@@ -789,7 +845,7 @@ void sirikali::mountMultipleVolumes( utility::volumeList e )
 
 void sirikali::autoMountFavoritesOnAvailable( QString m )
 {
-	if( utility::autoMountFavoritesOnAvailable() ){
+	if( settings::instance().autoMountFavoritesOnAvailable() ){
 
 		utility::volumeList e ;
 
@@ -842,7 +898,7 @@ utility::volumeList sirikali::autoUnlockVolumes( utility::volumeList l,bool auto
 		return l ;
 	}
 
-	auto e = utility::autoMountBackEnd() ;
+	auto e = settings::instance().autoMountBackEnd() ;
 
 	if( e.isInvalid() ){
 
@@ -868,19 +924,16 @@ utility::volumeList sirikali::autoUnlockVolumes( utility::volumeList l,bool auto
 
 				q.emplace_back( e.first,key ) ;
 			}else{
-				auto& s = siritask::encryptedFolderMount( { e.first,key } ) ;
+				auto s = siritask::encryptedFolderMount( { e.first,key } ) ;
 
-				s.then( [ this,autoOpenFolderOnMount,e = e.first.mountPointPath ]( siritask::cmdStatus s ){
+				if( s == engines::engine::status::success && autoOpenFolderOnMount ){
 
-					if( s == siritask::status::success && autoOpenFolderOnMount ){
-
-						this->openMountPointPath( e ) ;
-					}
-				} ) ;
+					this->openMountPointPath( e.first.mountPointPath ) ;
+				}
 			}
 		} ;
 
-		auto s = utility::showMountDialogWhenAutoMounting() ;
+		auto s = settings::instance().showMountDialogWhenAutoMounting() ;
 
 		for( const auto& it : l ){
 
@@ -904,7 +957,9 @@ utility::volumeList sirikali::autoUnlockVolumes( utility::volumeList l,bool auto
 	}else{
 		m->setImage( QIcon( ":/sirikali" ) ) ;
 
-		if( m->open( utility::walletName( m->backEnd() ),utility::applicationName() ) ){
+		auto& s = settings::instance() ;
+
+		if( m->open( s.walletName( m->backEnd() ),s.applicationName() ) ){
 
 			return _mountVolumes() ;
 		}else{
@@ -1096,7 +1151,7 @@ static utility::result< QByteArray > _volume_properties( const QString& cmd,
 
 		return e.stdOut() ;
 	}else{
-		for( const auto& it : utility::readFavorites() ){
+		for( const auto& it : settings::instance().readFavorites() ){
 
 			if( utility::Task::makePath( it.volumePath ) == path ){
 
@@ -1221,7 +1276,7 @@ void sirikali::sshfsProperties()
 
 	auto row = table->currentRow() ;
 
-	auto m = SiriKali::Winfsp::volumeProperties( table->item( row,1 )->text() ) ;
+	auto m = SiriKali::Windows::volumeProperties( table->item( row,1 )->text() ) ;
 
 	if( m.isEmpty() ){
 
@@ -1347,6 +1402,11 @@ void sirikali::slotOpenFolder()
 		auto item = table->currentItem() ;
 		auto path = table->item( item->row(),1 )->text() ;
 
+		if( utility::platformIsWindows() ){
+
+			path = path.replace( "/","\\" ) ;
+		}
+
 		this->openMountPoint( path ) ;
 	}
 }
@@ -1361,7 +1421,7 @@ void sirikali::openMountPoint( const QString& m_point )
 
 void sirikali::openMountPointPath( const QString& m )
 {
-	if( utility::autoOpenFolderOnMount() ){
+	if( settings::instance().autoOpenFolderOnMount() ){
 
 		this->openMountPoint( m ) ;
 	}
@@ -1496,7 +1556,8 @@ void sirikali::createVolume( QAction * ac )
 
 		if( s == "Sshfs" ){
 
-			favorites::instance( this,favorites::type::sshfs ) ;
+			favorites2::instance( this,favorites::type::sshfs ) ;
+			//favorites::instance( this,favorites::type::sshfs ) ;
 		}else{
 			this->mount( volumeInfo(),s ) ;
 		}
@@ -1541,7 +1602,7 @@ void sirikali::unlockVolume()
 	this->disableAll() ;
 
 	auto e = tr( "Select An Encrypted Volume Directory" ) ;
-	auto path = utility::getExistingDirectory( this,e,utility::homePath() ) ;
+	auto path = utility::getExistingDirectory( this,e,settings::instance().homePath() ) ;
 
 	if( path.isEmpty() ){
 
@@ -1590,7 +1651,7 @@ void sirikali::updateList( const volumeInfo& entry )
 
 		auto table = m_ui->tableWidget ;
 
-		auto row = tablewidget::columnHasEntry( table,entry.volumePath() ) ;
+		auto row = tablewidget::columnHasEntry( table,entry.mountPoint(),1 ) ;
 
 		if( row == -1 ){
 
@@ -1619,9 +1680,9 @@ void sirikali::pbUmount()
 		auto b = table->item( row,1 )->text() ;
 		auto c = table->item( row,2 )->text() ;
 
-		utility::Task::suspendForOneSecond() ;
+		utility::waitForOneSecond() ;
 
-		if( siritask::encryptedFolderUnMount( a,b,c ).await() ){
+		if( siritask::encryptedFolderUnMount( a,b,c ) ){
 
 			siritask::deleteMountFolder( b ) ;
 		}else{
@@ -1630,6 +1691,37 @@ void sirikali::pbUmount()
 			this->enableAll() ;
 		}
 	}
+}
+
+void sirikali::emergencyShutDown()
+{
+	m_emergencyShuttingDown = true ;
+
+	this->hide() ;
+
+	m_mountInfo.announceEvents( false ) ;
+
+	auto table = m_ui->tableWidget ;
+
+	const auto cipherFolders = tablewidget::columnEntries( table,0 ) ;
+	const auto mountPoints   = tablewidget::columnEntries( table,1 ) ;
+	const auto fileSystems   = tablewidget::columnEntries( table,2 ) ;
+
+	for( auto r = cipherFolders.size() - 1 ; r >= 0 ; r-- ){
+
+		const auto& a = cipherFolders.at( r ) ;
+		const auto& b = mountPoints.at( r ) ;
+		const auto& c = fileSystems.at( r ) ;
+
+		if( siritask::encryptedFolderUnMount( a,b,c,1 ) ){
+
+			tablewidget::deleteRow( table,b,1 ) ;
+
+			siritask::deleteMountFolder( b ) ;
+		}
+	}
+
+	this->closeApplication( 0,"Emergency shut down" ) ;
 }
 
 void sirikali::unMountAll()
@@ -1644,7 +1736,7 @@ void sirikali::unMountAll()
 	const auto mountPoints   = tablewidget::columnEntries( table,1 ) ;
 	const auto fileSystems   = tablewidget::columnEntries( table,2 ) ;
 
-	utility::Task::suspendForOneSecond() ;
+	utility::waitForOneSecond() ;
 
 	for( auto r = cipherFolders.size() - 1 ; r >= 0 ; r-- ){
 
@@ -1652,13 +1744,13 @@ void sirikali::unMountAll()
 		const auto& b = mountPoints.at( r ) ;
 		const auto& c = fileSystems.at( r ) ;
 
-		if( siritask::encryptedFolderUnMount( a,b,c ).await() ){
+		if( siritask::encryptedFolderUnMount( a,b,c ) ){
 
 			tablewidget::deleteRow( table,b,1 ) ;
 
 			siritask::deleteMountFolder( b ) ;
 
-			utility::Task::suspendForOneSecond() ;
+			utility::waitForOneSecond() ;
 		}
 	}
 
@@ -1681,7 +1773,12 @@ void sirikali::pbUpdate()
 {
 	this->disableAll() ;
 
-	this->updateVolumeList( mountinfo::unlockedVolumes().await() ) ;
+	if( utility::platformIsWindows() ){
+
+		this->updateVolumeList( mountinfo::unlockedVolumes().get() ) ;
+	}else{
+		this->updateVolumeList( mountinfo::unlockedVolumes().await() ) ;
+	}
 }
 
 void sirikali::updateVolumeList( const std::vector< volumeInfo >& r )
@@ -1736,14 +1833,14 @@ sirikali::~sirikali()
 
 		const auto& r = this->window()->geometry() ;
 
-		utility::setWindowDimensions( { { { r.x(),
-						    r.y(),
-						    r.width(),
-						    r.height(),
-						    q->columnWidth( 0 ),
-						    q->columnWidth( 1 ),
-						    q->columnWidth( 2 ),
-						    q->columnWidth( 3 ) } } } ) ;
+		settings::instance().setWindowDimensions( { { { r.x(),
+								r.y(),
+								r.width(),
+								r.height(),
+								q->columnWidth( 0 ),
+								q->columnWidth( 1 ),
+								q->columnWidth( 2 ),
+								q->columnWidth( 3 ) } } } ) ;
 
 		delete m_ui ;
 	}

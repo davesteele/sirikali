@@ -17,8 +17,8 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef GOCRYPTFSCREATEOPTIONS_H
-#define GOCRYPTFSCREATEOPTIONS_H
+#ifndef ENCFSCREATEOPTIONS_H
+#define ENCFSCREATEOPTIONS_H
 
 #include <functional>
 #include <utility>
@@ -27,29 +27,31 @@
 #include <QString>
 #include <QDialog>
 
+#include "../engines.h"
+
 namespace Ui {
-class gocryptfscreateoptions;
+class encfscreateoptions;
 }
 
-class gocryptfscreateoptions : public QDialog
+class encfscreateoptions : public QDialog
 {
 	Q_OBJECT
 public:
-	static void instance( QWidget * parent,std::function< void( const QStringList& ) > function )
+	static void instance( QWidget * parent,std::function< void( const engines::engine::Options& ) > function )
 	{
-                new gocryptfscreateoptions( parent,std::move( function ) ) ;
+                new encfscreateoptions( parent,std::move( function ) ) ;
 	}
-        gocryptfscreateoptions( QWidget * parent,std::function< void( const QStringList& ) > ) ;
-        ~gocryptfscreateoptions() ;
+	encfscreateoptions( QWidget * parent,std::function< void( const engines::engine::Options& ) > ) ;
+        ~encfscreateoptions() ;
 private slots:
 	void pbSelectConfigPath() ;
 	void pbOK() ;
 	void pbCancel() ;
 private:
-	void HideUI( const QStringList& = QStringList() ) ;
+	void HideUI( const engines::engine::Options& = engines::engine::Options() ) ;
 	void closeEvent( QCloseEvent * ) ;
-        Ui::gocryptfscreateoptions * m_ui ;
-	std::function< void( const QStringList& ) > m_function ;
+        Ui::encfscreateoptions * m_ui ;
+	std::function< void( const engines::engine::Options& ) > m_function ;
 };
 
 #endif // GOCRYPTFSCREATEOPTIONS_H

@@ -18,9 +18,10 @@
  */
 
 #include "checkforupdates.h"
+#include "settings.h"
 
 checkUpdates::checkUpdates( QWidget * widget ) : m_widget( widget ),
-	m_timeOut( utility::networkTimeOut() ),m_running( false )
+	m_timeOut( settings::instance().networkTimeOut() ),m_running( false )
 {
 	m_networkRequest.setRawHeader( "Host","api.github.com" ) ;
 	m_networkRequest.setRawHeader( "Accept-Encoding","text/plain" ) ;
@@ -43,7 +44,7 @@ void checkUpdates::run( bool e )
 
 		if( e ){
 
-			if( utility::autoCheck() ){
+			if( settings::instance().autoCheck() ){
 
 				this->check( e ) ;
 			}
@@ -94,13 +95,13 @@ void checkUpdates::showResult()
 	}
 }
 
-QString checkUpdates::InstalledVersion( const siritask::volumeType& e )
+QString checkUpdates::InstalledVersion( const QString& e )
 {
 	if( e == "sirikali" ){
 
 		return THIS_VERSION ;
 	}else{
-		auto s = utility::backEndInstalledVersion( e.name() ).await() ;
+		auto s = utility::unwrap( utility::backEndInstalledVersion( e ) ) ;
 
 		if( s ){
 
@@ -164,7 +165,15 @@ void checkUpdates::checkForUpdate( backends_t::size_type position )
 
 		auto exe = e.first ;
 
-		auto f = this->InstalledVersion( exe ) ;
+		auto f = [ & ](){
+
+			if( QString( exe ) == "ecryptfs-simple" ){
+
+				return this->InstalledVersion( "ecryptfs" ) ;
+			}else{
+				return this->InstalledVersion( exe ) ;
+			}
+		}() ;
 
 		if( f == "N/A" ){
 

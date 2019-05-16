@@ -27,45 +27,48 @@
 #include <QList>
 #include <vector>
 #include <memory>
-#include <QProcess>
 
 #include "task.hpp"
 #include "siritask.h"
+#include "engines.h"
 
 namespace SiriKali{
-namespace Winfsp{
+namespace Windows{
 
-Task::process::result FspLaunchStop( const QString& className,
-				     const QString& instanceName,
-				     const QStringList& opts ) ;
+struct opts{
 
-Task::process::result FspLaunchStart( const QString& className,
-				      const QString& instanceName,
-				      const QStringList& opts,
-				      const QByteArray& password ) ;
+	const engines::engine::args& args ;
+	const engines::engine::options& options ;
+	const engines::engine& engine ;
+	const QString& password ;
+} ;
 
-Task::process::result FspLaunchStart( const QString& exe,
-				      const QByteArray& password,
-				      const siritask::options& ) ;
+Task::process::result mount( const SiriKali::Windows::opts& ) ;
 
-Task::process::result FspLaunchRun( const QString& exe,
-				    const QByteArray& password,
-				    const siritask::options& ) ;
+Task::process::result create( const SiriKali::Windows::opts& ) ;
 
-Task::process::result FspLaunchStop( const QString& mountPath ) ;
+Task::process::result unmount( const QString& mountPath ) ;
 
 QString volumeProperties( const QString& mountPath ) ;
 
 int terminateProcess( unsigned long pid ) ;
 
-QString sshfsInstallDir() ;
-QString encfsInstallDir() ;
-QString securefsInstallDir() ;
+QString engineInstalledDir( const QString& ) ;
+QStringList engineInstalledDirs() ;
 
-std::vector< QStringList > commands() ;
+bool mountPointTaken( const QString& ) ;
+
+void updateVolumeList( std::function< void() > ) ;
+
+bool backEndTimedOut( const QString& ) ;
 
 struct mountOptions
 {
+	mountOptions( const QString& a,const QString& b,const QString& c,
+		      const QString& d,const QString& e ) :
+		mode( a ),subtype( b ),cipherFolder( c ),mountPointPath( d ),fuseOptions( e )
+	{
+	}
 	QString mode ;
 	QString subtype ;
 	QString cipherFolder ;
@@ -73,13 +76,7 @@ struct mountOptions
 	QString fuseOptions ;
 };
 
-mountOptions mountOption( const QStringList& e ) ;
-
 std::vector< mountOptions > getMountOptions() ;
-
-bool babySittingBackends() ;
-
-void updateVolumeList( std::function< void() > ) ;
 
 }
 }

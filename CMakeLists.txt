@@ -4,14 +4,9 @@ set_property( GLOBAL PROPERTY ALLOW_DUPLICATE_CUSTOM_TARGETS ON )
 
 project( sirikali )
 
-set( PGR_VERSION "1.3.6" )
+set( PGR_VERSION "1.3.8" )
 
 add_definitions( -Wextra -Wall -pedantic )
-
-if( WIN32 )
-    include_directories( "C:\\Program Files (x86)\\WinFsp\\inc" )
-    link_directories( "C:\\Program Files (x86)\\WinFsp\\lib" )
-endif()
 
 set( CMAKE_CXX_STANDARD 14 )
 set( CMAKE_CXX_STANDARD_REQUIRED ON )
@@ -67,20 +62,13 @@ else()
 	file( WRITE ${PROJECT_BINARY_DIR}/can_build_pwquality.h "#define BUILD_PWQUALITY 0\n" )
 endif()
 
-file( WRITE ${PROJECT_BINARY_DIR}/locale_path.h "\n#define TRANSLATION_PATH \"${CMAKE_INSTALL_FULL_DATADIR}/sirikali/translations/\"\n")
+if( APPLE )
+        file( WRITE ${PROJECT_BINARY_DIR}/locale_path.h "\n#define TRANSLATION_PATH \"${CMAKE_INSTALL_PREFIX}/sirikali.app/Contents/Resources/\"\n")
+else()
+	file( WRITE ${PROJECT_BINARY_DIR}/locale_path.h "\n#define TRANSLATION_PATH \"${CMAKE_INSTALL_FULL_DATADIR}/sirikali/translations/\"\n")
+endif()
 
 file( WRITE  ${PROJECT_BINARY_DIR}/install_prefix.h "\n#define INSTALL_PREFIX \"${CMAKE_INSTALL_PREFIX}/\"\n" )
-
-file( WRITE ${PROJECT_BINARY_DIR}/version.h "
-#ifndef THIS_VERSION
-#define THIS_VERSION \"${PGR_VERSION}\"
-#endif
-\n
-#ifndef SIRIKALI_VERSION
-#define SIRIKALI_VERSION
-#define VERSION_STRING \"Version  : ${PGR_VERSION}\\nCopyright: 2016-2018 Francis Banyikwa,mhogomchungu@gmail.com\\nLicense  : GPLv2+\"
-#endif
-\n" )
 
 if( NOT DEFINED INTERNAL_LXQT_WALLET )
 	set( INTERNAL_LXQT_WALLET "false" )
@@ -102,13 +90,7 @@ file( WRITE ${PROJECT_BINARY_DIR}/json.h "\n#include \"${JSON_HEADER_PATH}\"" )
 MESSAGE( STATUS "found json.hpp header file at: ${JSON_HEADER_PATH}" )
 
 if( WIN32 )
-
-    set( GCRYPT_INCLUDE_FILE "${PROJECT_SOURCE_DIR}/libs/include/gcrypt.h" )
-    set( GCRYPT_INCLUDE_PATH "${PROJECT_SOURCE_DIR}/libs/include" )
-
-    MESSAGE( STATUS "${GCRYPT_INCLUDE_FILE}" )
-    set( GCRYPT_LIBRARY "${PROJECT_SOURCE_DIR}/libs/lib/libgcrypt.dll.a" )
-
+    set( INTERNAL_LXQT_WALLET "true" )
 else()
 
     find_file( GCRYPT_INCLUDE_FILE gcrypt.h )
@@ -117,22 +99,22 @@ else()
     add_definitions( -I${GCRYPT_INCLUDE_PATH} )
 
     find_library( GCRYPT_LIBRARY gcrypt )
-endif()
 
-if( NOT GCRYPT_INCLUDE_FILE )
-	MESSAGE( FATAL_ERROR "could not find gcrypt header file" )
-else()
-	MESSAGE( STATUS "found gcrypt header file at: ${GCRYPT_INCLUDE_FILE}" )
-endif()
+    if( NOT GCRYPT_INCLUDE_FILE )
+            MESSAGE( FATAL_ERROR "could not find gcrypt header file" )
+    else()
+            MESSAGE( STATUS "found gcrypt header file at: ${GCRYPT_INCLUDE_FILE}" )
+    endif()
 
-if( NOT GCRYPT_LIBRARY )
-	MESSAGE( FATAL_ERROR "could not find gcrypt library" )
-else()
-	get_filename_component( GCRYPT_LIBRARY_PATH ${GCRYPT_LIBRARY} DIRECTORY )
+    if( NOT GCRYPT_LIBRARY )
+            MESSAGE( FATAL_ERROR "could not find gcrypt library" )
+    else()
+            get_filename_component( GCRYPT_LIBRARY_PATH ${GCRYPT_LIBRARY} DIRECTORY )
 
-	MESSAGE( STATUS "found gcrypt library at: ${GCRYPT_LIBRARY}" )
-	MESSAGE( STATUS "adding library search path of: ${GCRYPT_LIBRARY_PATH}" )
+            MESSAGE( STATUS "found gcrypt library at: ${GCRYPT_LIBRARY}" )
+            MESSAGE( STATUS "adding library search path of: ${GCRYPT_LIBRARY_PATH}" )
 
+    endif()
 endif()
 
 find_package( Qt5Widgets REQUIRED )
@@ -143,14 +125,31 @@ message( STATUS "Found Qt5Widgets, version  ${Qt5Widgets_VERSION}" )
 message( STATUS "Found Qt5Core, version  ${Qt5Core_VERSION}" )
 message( STATUS "Found Qt5Network, version  ${Qt5Network_VERSION}" )
 
+file( WRITE ${PROJECT_BINARY_DIR}/version.h "
+#ifndef THIS_VERSION
+#define THIS_VERSION \"${PGR_VERSION}\"
+#endif
+\n
+#ifndef SIRIKALI_VERSION
+#define SIRIKALI_VERSION
+#define VERSION_STRING \"Version  : ${PGR_VERSION} (Compiled with Qt ${Qt5Core_VERSION})\\nCopyright: 2016-2019 Francis Banyikwa,mhogomchungu@gmail.com\\nLicense  : GPLv2+\"
+#endif
+\n" )
+
 pkg_check_modules( MCHUNGU_NETWORK mhogomchungu_network )
 pkg_check_modules( MCHUNGU_TASK mhogomchungu_task )
 
 if( INTERNAL_LXQT_WALLET )
 
-	message( STATUS "---------------------------------------------------------------------------" )
-	message( STATUS "lxqt wallet support will be provided by an internal library" )
-	message( STATUS "---------------------------------------------------------------------------" )
+        if( WIN32 )
+                message( STATUS "---------------------------------------------------------------------------" )
+                message( STATUS "lxqt wallet support is disabled on Windows" )
+                message( STATUS "---------------------------------------------------------------------------" )
+        else()
+                message( STATUS "---------------------------------------------------------------------------" )
+                message( STATUS "lxqt wallet support will be provided by an internal library" )
+                message( STATUS "---------------------------------------------------------------------------" )
+        endif()
 
 	ADD_SUBDIRECTORY( src/3rdParty/lxqt_wallet )
 	include_directories( ${PROJECT_SOURCE_DIR}/src/3rdParty/lxqt_wallet/frontend )
@@ -230,25 +229,25 @@ set( UI_FILES 	src/sirikali.ui
 		src/dialogmsg.ui
 		src/plugin.ui
 		src/favorites.ui
+		src/favorites2.ui
 		src/readonlywarning.ui
 		src/walletconfig.ui
 		src/walletconfiginput.ui
 		src/options.ui
 		src/dialogok.ui
 		src/help.ui
-		src/gocryptfscreateoptions.ui
 		src/filemanager.ui
-		src/securefscreateoptions.ui
-		src/cryfscreateoptions.ui
-                src/configfileoption.ui
-                src/configoptions.ui
-                src/ecryptfscreateoptions.ui
-                src/debugwindow.ui
-                src/encfscreateoptions.ui
+		src/debugwindow.ui
+		src/configfileoption.ui
+		src/configoptions.ui
+		src/engines/gocryptfscreateoptions.ui
+		src/engines/ecryptfscreateoptions.ui
+		src/engines/securefscreateoptions.ui
+		src/engines/encfscreateoptions.ui
+		src/engines/cryfscreateoptions.ui
 )
 
 set( MOC_FILES
-		src/encfscreateoptions.h
                 src/configoptions.h
                 src/configfileoption.h
                 src/checkforupdates.h
@@ -260,36 +259,39 @@ set( MOC_FILES
 		src/dialogmsg.h
 		src/plugin.h
 		src/favorites.h
-		src/gocryptfscreateoptions.h
+		src/favorites2.h
 		src/readonlywarning.h
 		src/walletconfig.h
 		src/walletconfiginput.h
 		src/options.h
 		src/filemanager.h
 		src/mountinfo.h
-		src/securefscreateoptions.h
-		src/cryfscreateoptions.h
-		src/ecryptfscreateoptions.h
 		src/debugwindow.h
+		src/engines/gocryptfscreateoptions.h
+		src/engines/ecryptfscreateoptions.h
+		src/engines/securefscreateoptions.h
+		src/engines/encfscreateoptions.h
+		src/engines/cryfscreateoptions.h
  )
 
 set( SRC 	src/dialogok.cpp
 		src/main.cpp
+		src/systemsignalhandler.cpp
 		src/crypto.cpp
-		src/encfscreateoptions.cpp
 		src/debugwindow.cpp
-		src/gocryptfscreateoptions.cpp
 		src/configoptions.cpp
-                src/configfileoption.cpp
+		src/configfileoption.cpp
 		src/sirikali.cpp
 		src/keydialog.cpp
 		src/siritask.cpp
 		src/help.cpp
+		src/engines.cpp
 		src/oneinstance.cpp
 		src/mountinfo.cpp
 		src/utility.cpp
 		src/dialogmsg.cpp
 		src/favorites.cpp
+		src/favorites2.cpp
 		src/checkforupdates.cpp
 		src/plugin.cpp
 		src/tablewidget.cpp
@@ -299,11 +301,21 @@ set( SRC 	src/dialogok.cpp
 		src/options.cpp
 		src/secrets.cpp
 		src/filemanager.cpp
-		src/securefscreateoptions.cpp
-		src/cryfscreateoptions.cpp
 		src/utility2.cpp
-		src/ecryptfscreateoptions.cpp
-		src/winfsp.cpp
+                src/win.cpp
+		src/settings.cpp
+		src/engines/cryfs.cpp
+		src/engines/ecryptfs.cpp
+		src/engines/gocryptfs.cpp
+		src/engines/securefs.cpp
+		src/engines/sshfs.cpp
+		src/engines/encfs.cpp
+		src/engines/unknown.cpp
+		src/engines/gocryptfscreateoptions.cpp
+		src/engines/ecryptfscreateoptions.cpp
+		src/engines/securefscreateoptions.cpp
+		src/engines/encfscreateoptions.cpp
+		src/engines/cryfscreateoptions.cpp
 )
 
 if( APPLE )
@@ -350,7 +362,7 @@ link_directories( ${GCRYPT_LIBRARY_PATH} )
 
 if( WIN32 )
     #TARGET_LINK_LIBRARIES( sirikali winfsp-x86 ${Qt5Widgets_LIBRARIES} ${Qt5Core_LIBRARIES} ${Qt5Widgets_LIBRARIES} ${Qt5Network_LIBRARIES} ${library_pwquality} ${GCRYPT_LIBRARY} lxqt-wallet mhogomchungu_task mhogomchungu_network -L${GCRYPT_LIBRARY_PATH})
-    TARGET_LINK_LIBRARIES( sirikali ${Qt5Widgets_LIBRARIES} ${Qt5Core_LIBRARIES} ${Qt5Widgets_LIBRARIES} ${Qt5Network_LIBRARIES} ${library_pwquality} ${GCRYPT_LIBRARY} lxqt-wallet mhogomchungu_task mhogomchungu_network -L${GCRYPT_LIBRARY_PATH})
+    TARGET_LINK_LIBRARIES( sirikali ${Qt5Widgets_LIBRARIES} ${Qt5Core_LIBRARIES} ${Qt5Widgets_LIBRARIES} ${Qt5Network_LIBRARIES} ${library_pwquality} lxqt-wallet mhogomchungu_task mhogomchungu_network)
 
 else()
     TARGET_LINK_LIBRARIES( sirikali ${Qt5Widgets_LIBRARIES} ${Qt5Core_LIBRARIES} ${Qt5Widgets_LIBRARIES} ${Qt5Network_LIBRARIES} ${library_pwquality} ${GCRYPT_LIBRARY} lxqt-wallet mhogomchungu_task mhogomchungu_network -L${GCRYPT_LIBRARY_PATH})
@@ -376,13 +388,14 @@ SET( APPS "\${CMAKE_INSTALL_PREFIX}/sirikali.app" )
 
 set_target_properties( sirikali PROPERTIES MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/src/MacOSXBundleInfo.plist.in" )
 
-install( TARGETS sirikali BUNDLE DESTINATION . COMPONENT Runtime RUNTIME DESTINATION bin COMPONENT Runtime )
+install( TARGETS sirikali BUNDLE DESTINATION . COMPONENT Runtime )
 
 file( COPY icons/256x256/sirikali.icns DESTINATION "sirikali.app/Contents/Resources/" )
 file( COPY translations/fr_FR.qm DESTINATION "sirikali.app/Contents/Resources/" )
 file( COPY translations/en_US.qm DESTINATION "sirikali.app/Contents/Resources/" )
 file( COPY translations/de_DE.qm DESTINATION "sirikali.app/Contents/Resources/" )
 file( COPY translations/es_MX.qm DESTINATION "sirikali.app/Contents/Resources/" )
+file( COPY translations/ru_RU.qm DESTINATION "sirikali.app/Contents/Resources/" )
 
 file( COPY changelog DESTINATION "sirikali.app/Contents/Resources/" )
 
@@ -415,6 +428,7 @@ install( FILES translations/en_US.qm DESTINATION ${CMAKE_INSTALL_DATADIR}/sirika
 install( FILES translations/fr_FR.qm DESTINATION ${CMAKE_INSTALL_DATADIR}/sirikali/translations )
 install( FILES translations/es_MX.qm DESTINATION ${CMAKE_INSTALL_DATADIR}/sirikali/translations )
 install( FILES translations/de_DE.qm DESTINATION ${CMAKE_INSTALL_DATADIR}/sirikali/translations )
+install( FILES translations/ru_RU.qm DESTINATION ${CMAKE_INSTALL_DATADIR}/sirikali/translations )
 
 install( FILES src/sirikali.1.gz DESTINATION ${CMAKE_INSTALL_DATADIR}/man/man1/ )
 install( FILES src/sirikali.pkexec.1.gz DESTINATION ${CMAKE_INSTALL_DATADIR}/man/man1/ )
@@ -427,7 +441,7 @@ if( NOT APPLE )
 #install( FILES sirikali.png DESTINATION share/icons/hicolor/32x32/apps )
 
 # desktop file section
-file( WRITE ${PROJECT_BINARY_DIR}/sirikali.desktop
+file( WRITE ${PROJECT_BINARY_DIR}/io.github.mhogomchungu.sirikali.desktop
 
 "[Desktop Entry]
 Comment[en_US]=Manage Encrypted Volumes Hosted In Folders
@@ -445,7 +459,7 @@ Type=Application
 MimeType=inode/directory;
 Categories=Security;Utility;Qt;X-MandrivaLinux-System-FileTools;\n")
 
-install( FILES ${PROJECT_BINARY_DIR}/sirikali.desktop
+install( FILES ${PROJECT_BINARY_DIR}/io.github.mhogomchungu.sirikali.desktop
 	DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/applications
 	PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
 )
@@ -490,5 +504,126 @@ if( UNIX AND NOT APPLE )
 		install ( FILES ${PROJECT_BINARY_DIR}/org.sirikali.pkexec.policy DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/polkit-1/actions )
 	endif()
 endif()
+
+endif()
+
+if( WIN32 )
+
+    find_path( libstdc_PATH libstdc++-6.dll )
+
+    find_path( gcc_PATH gcc.exe )
+
+    find_path( windeployqt_PATH windeployqt.exe PATHS "${CMAKE_PREFIX_PATH}/bin" )
+
+file( WRITE ${PROJECT_BINARY_DIR}/sirikali_windows_installer_commands.txt
+"
+set PATH=${gcc_PATH};${libstdc_PATH};%PATH%\r\n
+${windeployqt_PATH}/windeployqt --release sirikali.exe\r\n
+")
+
+
+
+file( WRITE ${PROJECT_BINARY_DIR}/sirikali_windows_installer.iss
+"
+; Script generated by the Inno Setup Script Wizard.
+; SEE THE DOCUMENTATION FOR DETAILS ON CREATING INNO SETUP SCRIPT FILES!
+
+#define MyAppName \"SiriKali\"
+#define MyAppVersion \"${PGR_VERSION}\"
+#define MyAppPublisher \"Francis Banyikwa\"
+#define MyAppURL \"https://mhogomchungu.github.io/sirikali\"
+#define MyAppExeName \"sirikali.exe\"
+#define MyLibrariesLocation \"C:\\projects\\SiriKali.libraries.Qt-${Qt5Core_VERSION}\\\"
+#define MyEXELocation \"${PROJECT_BINARY_DIR}\\sirikali.exe\"
+#define MyOutPutPath  \"C:\\projects\\SiriKali.installer\\Qt-${Qt5Core_VERSION}\"
+#define MyGcryptLibraryPath \"C:\\projects\\sirikali\\libs\\lib\\\"
+#define MySourcesPath \"C:\\projects\\sirikali\\\"
+
+[Setup]
+AppId={{677BCC48-2AC2-4CBC-B826-A94324C26988}
+AppName={#MyAppName}
+AppVersion={#MyAppVersion}
+;AppVerName={#MyAppName} {#MyAppVersion}
+AppPublisher={#MyAppPublisher}
+AppPublisherURL={#MyAppURL}
+AppSupportURL={#MyAppURL}
+AppUpdatesURL={#MyAppURL}
+DefaultDirName={pf}\\{#MyAppName}
+LicenseFile={#MySourcesPath}\\LICENSE.txt
+OutputDir={#MyOutPutPath}
+SetupIconFile={#MySourcesPath}\\icons\\256x256\\sirikali.ico
+Compression=lzma
+SolidCompression=yes
+DisableProgramGroupPage=yes
+OutputBaseFilename=SiriKali-${PGR_VERSION}.setup
+
+[Tasks]
+Name: \"desktopicon\"; Description: \"{cm:CreateDesktopIcon}\"; GroupDescription: \"{cm:AdditionalIcons}\"; Flags: unchecked
+Name: \"quicklaunchicon\"; Description: \"{cm:CreateQuickLaunchIcon}\"; GroupDescription: \"{cm:AdditionalIcons}\"; Flags: unchecked; OnlyBelowVersion: 0,6.1
+
+[Files]
+Source: {#MyEXELocation}; DestDir: {app}; Flags: ignoreversion
+
+Source: {#MyLibrariesLocation}\\*.dll; DestDir: {app} ; Flags: ignoreversion
+Source: {#MyGcryptLibraryPath}\\*.dll; DestDir: {app} ; Flags: ignoreversion
+
+Source: {#MySourcesPath}\\LICENSE.txt; DestDir: {app}; Flags: ignoreversion
+
+Source: {#MyLibrariesLocation}\\bearer\\* ; DestDir: {app}\\bearer; Flags: ignoreversion
+
+Source: {#MyLibrariesLocation}\\iconengines\\* ; DestDir: {app}\\iconengines; Flags: ignoreversion
+
+Source: {#MyLibrariesLocation}\\imageformats\\*; DestDir: {app}\\imageformats; Flags: ignoreversion
+
+Source: {#MyLibrariesLocation}\\styles\\*; DestDir: {app}\\styles; Flags: ignoreversion
+
+Source: {#MyLibrariesLocation}\\platforms\\*; DestDir: {app}\\platforms; Flags: ignoreversion
+
+Source: {#MyLibrariesLocation}\\translations\\*; DestDir: {app}\\translations; Flags: ignoreversion
+
+Source: {#MySourcesPath}\\translations\\*.qm; DestDir: {app}\\translations; Flags: ignoreversion
+
+Source: {#MySourcesPath}\\icons\\256x256\\sirikali.ico; DestDir: {app}\\icons; Flags: ignoreversion
+
+; NOTE: Don't use \"Flags: ignoreversion\" on any shared system files
+
+[Icons]
+Name: \"{commonprograms}\\{#MyAppName}\"; Filename: \"{app}\\{#MyAppExeName}\"; IconFilename: \"{app}\\icons\\sirikali.ico\"; WorkingDir: \"{app}\"
+;Name: \"{commonprograms}\\Uninstall {#MyAppName}\"; Filename: \"{uninstallexe}\"; IconFilename: \"{app}\\icons\\sirikali.ico\"; WorkingDir: \"{app}\"
+
+Name: \"{commondesktop}\\{#MyAppName}\"; Filename: \"{app}\\{#MyAppExeName}\"; IconFilename: \"{app}\\icons\\sirikali.ico\"; WorkingDir: \"{app}\"; Tasks: desktopicon
+Name: \"{userappdata}\\Microsoft\\Internet Explorer\\Quick Launch\\{#MyAppName}\"; Filename: \"{app}\\{#MyAppExeName}\"; IconFilename: \"{app}\\icons\\sirikali.ico\"; WorkingDir: \"{app}\"; Tasks: quicklaunchicon
+
+[Run]
+Filename: \"{app}\\{#MyAppExeName}\"; Description: \"{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}\"; Flags: nowait postinstall skipifsilent
+
+[Languages]
+Name: \"english\"; MessagesFile: \"compiler:Default.isl\"
+Name: \"brazilianportuguese\"; MessagesFile: \"compiler:Languages\\BrazilianPortuguese.isl\"
+Name: \"catalan\"; MessagesFile: \"compiler:Languages\\Catalan.isl\"
+Name: \"corsican\"; MessagesFile: \"compiler:Languages\\Corsican.isl\"
+Name: \"czech\"; MessagesFile: \"compiler:Languages\\Czech.isl\"
+Name: \"danish\"; MessagesFile: \"compiler:Languages\\Danish.isl\"
+Name: \"dutch\"; MessagesFile: \"compiler:Languages\\Dutch.isl\"
+Name: \"finnish\"; MessagesFile: \"compiler:Languages\\Finnish.isl\"
+Name: \"french\"; MessagesFile: \"compiler:Languages\\French.isl\"
+Name: \"german\"; MessagesFile: \"compiler:Languages\\German.isl\"
+Name: \"greek\"; MessagesFile: \"compiler:Languages\\Greek.isl\"
+Name: \"hebrew\"; MessagesFile: \"compiler:Languages\\Hebrew.isl\"
+Name: \"hungarian\"; MessagesFile: \"compiler:Languages\\Hungarian.isl\"
+Name: \"italian\"; MessagesFile: \"compiler:Languages\\Italian.isl\"
+Name: \"japanese\"; MessagesFile: \"compiler:Languages\\Japanese.isl\"
+Name: \"norwegian\"; MessagesFile: \"compiler:Languages\\Norwegian.isl\"
+Name: \"polish\"; MessagesFile: \"compiler:Languages\\Polish.isl\"
+Name: \"portuguese\"; MessagesFile: \"compiler:Languages\\Portuguese.isl\"
+Name: \"russian\"; MessagesFile: \"compiler:Languages\\Russian.isl\"
+Name: \"scottishgaelic\"; MessagesFile: \"compiler:Languages\\ScottishGaelic.isl\"
+Name: \"serbiancyrillic\"; MessagesFile: \"compiler:Languages\\SerbianCyrillic.isl\"
+Name: \"serbianlatin\"; MessagesFile: \"compiler:Languages\\SerbianLatin.isl\"
+Name: \"slovenian\"; MessagesFile: \"compiler:Languages\\Slovenian.isl\"
+Name: \"spanish\"; MessagesFile: \"compiler:Languages\\Spanish.isl\"
+Name: \"turkish\"; MessagesFile: \"compiler:Languages\\Turkish.isl\"
+Name: \"ukrainian\"; MessagesFile: \"compiler:Languages\\Ukrainian.isl\"
+")
 
 endif()

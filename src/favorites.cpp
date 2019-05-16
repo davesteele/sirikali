@@ -31,6 +31,7 @@
 #include "utility.h"
 #include "dialogmsg.h"
 #include "tablewidget.h"
+#include "settings.h"
 
 favorites::favorites( QWidget * parent,favorites::type type ) : QDialog( parent ),
 	m_ui( new Ui::favorites )
@@ -53,6 +54,28 @@ favorites::favorites( QWidget * parent,favorites::type type ) : QDialog( parent 
 		m_reverseMode = e ;
 	} ) ;
 
+	connect( m_ui->cbVolumeNoPassword,&QCheckBox::toggled,[ this ]( bool e ){
+
+		m_volumeNeedNoPassword = e ;
+	} ) ;
+
+	connect( m_ui->cbReadOnlyMode,&QCheckBox::toggled,[ this ]( bool e ){
+
+		m_mountReadOnly = e ;
+	} ) ;
+
+	connect( m_ui->pbIdentityFile,&QPushButton::clicked,[ this ](){
+
+		auto e = this->getExistingFile( tr( "Path To A Config File" ) ) ;
+
+		if( !e.isEmpty() ){
+
+			m_ui->lineEditIdleTimeOut->setText( e ) ;
+		}
+	} ) ;
+
+	m_ui->cbReadOnlyMode->setEnabled( !utility::platformIsWindows() ) ;
+
 	m_ui->pbAdd->setObjectName( "Add" ) ;
 
 	if( utility::platformIsWindows() ){
@@ -68,6 +91,7 @@ favorites::favorites( QWidget * parent,favorites::type type ) : QDialog( parent 
 
 	m_ui->pbFolderPath->setIcon( QIcon( ":/sirikali.png" ) ) ;
 	m_ui->pbConfigFilePath->setIcon( QIcon( ":/file.png" ) ) ;
+	m_ui->pbIdentityFile->setIcon( QIcon( ":/file.png" ) ) ;
 
 	m_ui->cbAutoMount->setChecked( false ) ;
 
@@ -93,7 +117,7 @@ favorites::favorites( QWidget * parent,favorites::type type ) : QDialog( parent 
 
 	this->installEventFilter( this ) ;
 
-	utility::setParent( parent,&m_parentWidget,this ) ;
+	settings::instance().setParent( parent,&m_parentWidget,this ) ;
 
 	utility::setWindowOptions( this ) ;
 
@@ -104,7 +128,7 @@ favorites::favorites( QWidget * parent,favorites::type type ) : QDialog( parent 
 
 void favorites::checkFavoritesConsistency()
 {
-	int s = m_ui->tableWidget->columnCount() - utility::favoritesEntrySize() ;
+	int s = m_ui->tableWidget->columnCount() - settings::instance().favoritesEntrySize() ;
 
 	if( s == 0 ){
 
@@ -118,13 +142,13 @@ void favorites::checkFavoritesConsistency()
 		 * favorites entries to accomodate it.
 		 */
 
-		auto e = utility::readFavorites() ;
+		auto e = settings::instance().readFavorites() ;
 
-		utility::clearFavorites() ;
+		settings::instance().clearFavorites() ;
 
 		for( const auto& it : e ){
 
-			utility::addToFavorite( it.configStringList() ) ;
+			settings::instance().addToFavorite( it.configStringList() ) ;
 		}
 	}else{
 		/*
@@ -151,7 +175,7 @@ void favorites::devicePathTextChange( QString txt )
 
 			m_ui->lineEditMountPath->setText( txt ) ;
 		}else{
-			auto m = utility::mountPath( s ) ;
+			auto m = settings::instance().mountPath( s ) ;
 			m_ui->lineEditMountPath->setText( m ) ;
 		}
 	}
@@ -164,6 +188,8 @@ void favorites::shortcutPressed()
 
 void favorites::ShowUI( favorites::type type )
 {
+	m_type = type ;
+
 	m_ui->tableWidget->setColumnWidth( 0,285 ) ;
 	m_ui->tableWidget->setColumnWidth( 1,285 ) ;
 
@@ -177,7 +203,7 @@ void favorites::ShowUI( favorites::type type )
 		}
 	} ;
 
-	for( const auto& it : utility::readFavorites() ){
+	for( const auto& it : settings::instance().readFavorites() ){
 
 		_add_entry( it.list() ) ;
 	}
@@ -191,13 +217,15 @@ void favorites::ShowUI( favorites::type type )
 		m_ui->lineEditMountPath->clear() ;
 	}
 
-	if( type == favorites::type::sshfs ){
+	if( m_type == favorites::type::sshfs ){
 
-		m_ui->lineEditIdleTimeOut->setEnabled( false ) ;
 		m_ui->lineEditMountOptions->setText( "idmap=user,StrictHostKeyChecking=no" ) ;
 		m_ui->lineEditEncryptedFolderPath->setText( "sshfs " ) ;
 		m_ui->labelName ->setText( tr( "Remote Ssh Server Address\n(Example: sshfs woof@bar.foo:/remote/path)" ) ) ;
 		m_ui->labelCofigFilePath->setText( tr( "SSH_AUTH_SOCK Socket Path (Optional)" ) ) ;
+		m_ui->labelIdleTimeOut->setText( tr( "IdentityFile Path (Optional)" ) ) ;
+	}else{
+		m_ui->pbIdentityFile->setVisible( false ) ;
 	}
 
 	m_ui->tableWidget->setFocus() ;
@@ -256,11 +284,17 @@ void favorites::edit()
 			m_ui->lineEditIdleTimeOut->setText( b ) ;
 		}
 
-		m_ui->cbReverseMode->setChecked( c.contains( utility::reverseModeOption ) ) ;
+		m_ui->cbReverseMode->setChecked( c.contains( favorites::reverseModeOption ) ) ;
+		m_ui->cbVolumeNoPassword->setChecked( c.contains( favorites::volumeNeedNoPassword ) ) ;
+		m_ui->cbReadOnlyMode->setChecked( c.contains( favorites::mountReadOnly ) ) ;
 
 		if( c != "N/A" ){
 
-			m_ui->lineEditMountOptions->setText( utility::removeOption( c,utility::reverseModeOption ) ) ;
+			QString aa = favorites::reverseModeOption ;
+			QString bb = favorites::volumeNeedNoPassword ;
+			QString cc = favorites::mountReadOnly ;
+
+			m_ui->lineEditMountOptions->setText( utility::removeOption( c,aa,bb,cc ) ) ;
 		}
 	}
 }
@@ -339,7 +373,7 @@ void favorites::toggleAutoMount()
 
 		auto f = this->getEntry( row ) ;
 
-		utility::replaceFavorite( e,f ) ;
+		settings::instance().replaceFavorite( e,f ) ;
 	}
 }
 
@@ -353,7 +387,7 @@ void favorites::removeEntryFromFavoriteList()
 
 		auto row = table->currentRow() ;
 
-		utility::removeFavoriteEntry( this->getEntry( row ) ) ;
+		settings::instance().removeFavoriteEntry( this->getEntry( row ) ) ;
 
 		tablewidget::deleteRow( table,row ) ;
 
@@ -378,9 +412,29 @@ void favorites::add()
 
 		if( mOpts.isEmpty() ){
 
-			mOpts = utility::reverseModeOption ;
+			mOpts = favorites::reverseModeOption ;
 		}else{
-			mOpts += "," + utility::reverseModeOption ;
+			mOpts += QString( "," ) + favorites::reverseModeOption ;
+		}
+	}
+
+	if( m_volumeNeedNoPassword ){
+
+		if( mOpts.isEmpty() ){
+
+			mOpts = favorites::volumeNeedNoPassword ;
+		}else{
+			mOpts += QString( "," ) + favorites::volumeNeedNoPassword ;
+		}
+	}
+
+	if( m_mountReadOnly ){
+
+		if( mOpts.isEmpty() ){
+
+			mOpts = favorites::mountReadOnly ;
+		}else{
+			mOpts += QString( "," ) + favorites::mountReadOnly ;
 		}
 	}
 
@@ -415,11 +469,40 @@ void favorites::add()
 		}
 	}() ;
 
+	auto configPath = m_ui->lineEditConfigFilePath->text() ;
+	auto idleTimeOUt = m_ui->lineEditIdleTimeOut->text() ;
+
+	if( m_type == favorites::type::sshfs ){
+
+		if( !configPath.isEmpty() ){
+
+			if( mOpts.isEmpty() ){
+
+				mOpts = "IdentityAgent=" + configPath ;
+			}else{
+				mOpts += ",IdentityAgent=" + configPath ;
+			}
+		}
+
+		if( !idleTimeOUt.isEmpty() ){
+
+			if( mOpts.isEmpty() ){
+
+				mOpts = "IdentityFile=" + idleTimeOUt ;
+			}else{
+				mOpts += ",IdentityFile=" + idleTimeOUt ;
+			}
+		}
+
+		configPath.clear() ;
+		idleTimeOUt.clear() ;
+	}
+
 	QStringList e = { dev,
 			  path,
 			  autoMount,
-			  _option( m_ui->lineEditConfigFilePath->text() ),
-			  _option( m_ui->lineEditIdleTimeOut->text() ),
+			  _option( configPath ),
+			  _option( idleTimeOUt ),
 			  _option( mOpts ) } ;
 
 	if( m_ui->pbAdd->objectName() == "Edit" ){
@@ -429,7 +512,7 @@ void favorites::add()
 
 		auto f = this->getEntry( m_editRow ) ;
 
-		utility::replaceFavorite( f,e ) ;
+		settings::instance().replaceFavorite( f,e ) ;
 
 		tablewidget::updateRow( m_ui->tableWidget,e,m_editRow ) ;
 
@@ -438,17 +521,20 @@ void favorites::add()
 		m_ui->lineEditConfigFilePath->clear() ;
 		m_ui->lineEditIdleTimeOut->clear() ;
 		m_ui->lineEditMountOptions->clear() ;
-		m_ui->cbReverseMode->setChecked( false ) ;
 	}else{
 		tablewidget::addRow( m_ui->tableWidget,e ) ;
-		utility::addToFavorite( e ) ;
+		settings::instance().addToFavorite( e ) ;
 		m_ui->lineEditEncryptedFolderPath->clear() ;
 		m_ui->lineEditMountPath->clear() ;
 		m_ui->lineEditConfigFilePath->clear() ;
 		m_ui->lineEditIdleTimeOut->clear() ;
 		m_ui->lineEditMountOptions->clear() ;
-		m_ui->cbReverseMode->setChecked( false ) ;
 	}
+
+	m_ui->cbReverseMode->setChecked( false ) ;
+	m_ui->cbReadOnlyMode->setChecked( false ) ;
+	m_ui->cbVolumeNoPassword->setChecked( false ) ;
+	m_ui->cbAutoMount->setChecked( false ) ;
 
 	m_ui->lineEditEncryptedFolderPath->clear() ;
 	m_ui->lineEditMountPath->clear() ;
@@ -460,7 +546,10 @@ void favorites::configPath()
 {
 	auto e = this->getExistingFile( tr( "Path To A Config File" ) ) ;
 
-	m_ui->lineEditConfigFilePath->setText( e ) ;
+	if( !e.isEmpty() ){
+
+		m_ui->lineEditConfigFilePath->setText( e ) ;
+	}
 }
 
 QString favorites::getExistingFile( const QString& r )
@@ -526,4 +615,163 @@ void favorites::closeEvent( QCloseEvent * e )
 void favorites::currentItemChanged( QTableWidgetItem * current,QTableWidgetItem * previous )
 {
 	tablewidget::selectRow( current,previous ) ;
+}
+
+favorites::entry::entry()
+{
+}
+
+favorites::entry::entry( const QStringList& e )
+{
+	this->config( e ) ;
+}
+
+favorites::entry::entry( const QString& r )
+{
+	this->config( r.split( '\t',QString::SkipEmptyParts ) ) ;
+}
+
+QStringList favorites::entry::list( bool e ) const
+{
+	if( e ){
+
+		return this->configString().split( '\t',QString::SkipEmptyParts ) ;
+	}else{
+		return { volumePath,
+			 mountPointPath,
+			 autoMountVolume,
+			 configFilePath,
+			 idleTimeOut,
+			 mountOptions } ;
+	}
+}
+
+QString favorites::entry::string( char s ) const
+{
+	return this->list().join( QString( s ) ) ;
+}
+
+QString favorites::entry::configString() const
+{
+	auto _opt = [ ]( const QString& e )->QString{
+
+		if( e.isEmpty() ){
+
+			return "N/A" ;
+		}else{
+			return e ;
+		}
+	} ;
+
+	auto e = "%1\t%2\t%3\t%4\t%5\t%6\t" ;
+
+	return QString( e ).arg( volumePath,mountPointPath,autoMountVolume,
+				 _opt( configFilePath ),_opt( idleTimeOut ),
+				 _opt( mountOptions ) ) ;
+}
+
+QStringList favorites::entry::configStringList() const
+{
+	return this->configString().split( "\t",QString::SkipEmptyParts ) ;
+}
+
+bool favorites::entry::operator!=( const favorites::entry& other ) const
+{
+	return !( *this == other ) ;
+}
+
+bool favorites::entry::operator==( const favorites::entry& other ) const
+{
+	return  this->volumePath      == other.volumePath &&
+		this->mountPointPath  == other.mountPointPath &&
+		this->autoMountVolume == other.autoMountVolume &&
+		this->configFilePath  == other.configFilePath &&
+		this->idleTimeOut     == other.idleTimeOut &&
+		this->readOnlyMode    == other.readOnlyMode &&
+		this->mountOptions    == other.mountOptions &&
+		this->reverseMode     == other.reverseMode &&
+		this->volumeNeedNoPassword == other.volumeNeedNoPassword ;
+}
+
+bool favorites::entry::autoMount() const
+{
+	return autoMountVolume == "true" ;
+}
+
+QString favorites::entry::sanitizedMountOptions() const
+{
+	return sanitizedMountOptions( mountOptions ) ;
+}
+
+QString favorites::entry::sanitizedMountOptions( const QString& s )
+{
+	auto l = s.split( ',',QString::SkipEmptyParts ) ;
+
+	l.removeAll( favorites::reverseModeOption ) ;
+	l.removeAll( favorites::volumeNeedNoPassword ) ;
+	l.removeAll( favorites::mountReadOnly ) ;
+
+	return l.join( "," ) ;
+}
+
+void favorites::entry::config( const QStringList& e )
+{
+	utility2::stringListToStrings( e,
+				       volumePath,
+				       mountPointPath,
+				       autoMountVolume,
+				       configFilePath,
+				       idleTimeOut,
+				       mountOptions ) ;
+
+	if( configFilePath == "N/A" ){
+
+		configFilePath.clear() ;
+	}
+
+	if( idleTimeOut == "N/A" ){
+
+		idleTimeOut.clear() ;
+	}
+
+	if( mountOptions == "N/A" ){
+
+		mountOptions.clear() ;
+	}
+
+	reverseMode          = mountOptions.contains( favorites::reverseModeOption ) ;
+	volumeNeedNoPassword = mountOptions.contains( favorites::volumeNeedNoPassword ) ;
+
+	if( mountOptions.contains( favorites::mountReadOnly ) ){
+
+		readOnlyMode = readOnly( true ) ;
+	}
+}
+
+favorites::entry::readOnly::readOnly() : m_isSet( false )
+{
+}
+
+favorites::entry::readOnly::readOnly( bool e ) : m_readOnlyVolume( e ),m_isSet( true )
+{
+}
+
+bool favorites::entry::readOnly::onlyRead() const
+{
+	return m_readOnlyVolume ;
+}
+
+bool favorites::entry::readOnly::operator==( const favorites::entry::readOnly& other )
+{
+	if( other.m_isSet && this->m_isSet ){
+
+		return this->m_readOnlyVolume == other.m_readOnlyVolume ;
+	}else{
+		return false ;
+	}
+}
+
+favorites::entry::readOnly::operator bool() const
+{
+	return m_isSet;
 }

@@ -23,8 +23,9 @@
 #include <QDialog>
 #include <QString>
 #include <QStringList>
-
+#include <QTimer>
 #include <QMenu>
+#include <QLabel>
 
 class QCloseEvent ;
 class QAction ;
@@ -37,15 +38,82 @@ class QTableWidget ;
 #include "siritask.h"
 #include "can_build_pwquality.h"
 #include "secrets.h"
-#include "securefscreateoptions.h"
-#include "cryfscreateoptions.h"
-#include "gocryptfscreateoptions.h"
-#include "ecryptfscreateoptions.h"
-#include "encfscreateoptions.h"
+#include "engines.h"
+
+#include "favorites.h"
 
 #include <functional>
 #include <memory>
 #include <vector>
+
+class cryfsWarning : public QObject
+{
+	Q_OBJECT
+public:
+	cryfsWarning()
+	{
+		connect( &m_timer,&QTimer::timeout,[ this ](){
+
+			this->update() ;
+		} ) ;
+	}
+	void setWarningLabel( QLabel * l )
+	{
+		m_label = l ;
+		m_label->setVisible( false ) ;
+	}
+	void showCreate( const QString& engine )
+	{
+		m_warning = tr( "Please be patient because creating a CryFS volume may take a very long time.\n\n" ) ;
+		this->show( engine ) ;
+	}
+	void showUnlock( const QString& engine )
+	{
+		m_warning = tr( "Please be patient because unlocking a CryFS volume may take a very long time.\n\n" ) ;
+		this->show( engine ) ;
+	}
+	void hide()
+	{
+		m_timer.stop() ;
+		m_time = 0 ;
+		m_label->setVisible( false ) ;
+		m_label->setText( m_warning + tr( "Elapsed time: 0 seconds" ) ) ;
+	}
+private:
+	void show( const QString& engine )
+	{
+		if( engine == "cryfs" ){
+
+			static bool displayWarning = utility::backendIsGreaterOrEqualTo( engine,"0.10.0" ).await().value() ;
+
+			if( displayWarning ){
+
+				m_label->setVisible( true ) ;
+				m_timer.start( 1000 * 1 ) ;
+				this->update() ;
+			}
+		}
+	}
+	void update()
+	{
+		QString e ;
+		if( m_time >= 60 ){
+
+			e = tr( "Elapsed time: %0 minutes" ).arg( QString::number( m_time / 60,'f',2 ) ) ;
+		}else{
+			e = tr( "Elapsed time: %0 seconds" ).arg( QString::number( m_time ) ) ;
+		}
+
+		m_time++ ;
+
+		m_label->setText( m_warning + e ) ;
+	}
+private:
+	QLabel * m_label ;
+	QTimer m_timer ;
+	double m_time = 0 ;
+	QString m_warning ;
+};
 
 #if BUILD_PWQUALITY
 class keystrength
@@ -175,9 +243,9 @@ private :
 	void ShowUI( void ) ;
 	void HideUI( void ) ;
 
-	void showErrorMessage( const siritask::cmdStatus& ) ;
+	void showErrorMessage( const engines::engine::cmdStatus& ) ;
 	void showErrorMessage( const QString& ) ;
-	void reportErrorMessage( const siritask::cmdStatus& ) ;
+	void reportErrorMessage( const engines::engine::cmdStatus& ) ;
 	void openMountPoint( const QString& ) ;
 
 	void setUIVisible( bool ) ;
@@ -190,7 +258,7 @@ private :
 
 	bool upgradingFileSystem( void ) ;
 	bool mountedAll() ;
-	bool completed( const siritask::cmdStatus&,const QString& m ) ;
+	bool completed( const engines::engine::cmdStatus&,const QString& m ) ;
 	bool eventFilter( QObject * watched,QEvent * event ) ;
 
 	Ui::keyDialog * m_ui ;
@@ -215,7 +283,9 @@ private :
 	bool m_checked = false ;
 	bool m_hmac ;
 	bool m_closeGUI = false ;
+	bool m_reverseMode = false ;
 
+	favorites::entry::readOnly m_favoriteReadOnly ;
 	secrets& m_secrets ;
 
 	keystrength m_keyStrength ;
@@ -230,6 +300,8 @@ private :
 	std::function< void() > m_done = [](){} ;
 
 	utility::volumeList m_volumes ;
+
+	cryfsWarning m_cryfsWarning ;
 
 	decltype( m_volumes.size() ) m_counter = 0 ;
 };

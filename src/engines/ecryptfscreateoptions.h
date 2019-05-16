@@ -17,8 +17,8 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef CRYFSCREATEOPTIONS_H
-#define CRYFSCREATEOPTIONS_H
+#ifndef ECRYPTFSCREATEOPTIONS_H
+#define ECRYPTFSCREATEOPTIONS_H
 
 #include <functional>
 #include <utility>
@@ -27,29 +27,39 @@
 #include <QString>
 #include <QDialog>
 
+#include "../engines.h"
+
 namespace Ui {
-class cryfscreateoptions;
+class ecryptfscreateoptions;
 }
 
-class cryfscreateoptions : public QDialog
+class ecryptfscreateoptions : public QDialog
 {
 	Q_OBJECT
 public:
-	static void instance( QWidget * parent,std::function< void( const QStringList& ) > function )
+	static QString defaultCreateOptions()
 	{
-		new cryfscreateoptions( parent,std::move( function ) ) ;
+		return "-o key=passphrase,ecryptfs_key_bytes=32,ecryptfs_cipher=aes,ecryptfs_passthrough=n,ecryptfs_enable_filename_crypto=y" ;
 	}
-	explicit cryfscreateoptions( QWidget * parent,std::function< void( const QStringList& ) > ) ;
-	~cryfscreateoptions() ;
+	static QString defaultMiniCreateOptions()
+	{
+		return "-o key=passphrase,ecryptfs_key_bytes=32,ecryptfs_cipher=aes" ;
+	}
+	static void instance( QWidget * parent,std::function< void( const engines::engine::Options& ) > function )
+	{
+                new ecryptfscreateoptions( parent,std::move( function ) ) ;
+	}
+	ecryptfscreateoptions( QWidget * parent,std::function< void( const engines::engine::Options& ) > ) ;
+        ~ecryptfscreateoptions() ;
 private slots:
 	void pbSelectConfigPath() ;
 	void pbOK() ;
 	void pbCancel() ;
 private:
-	void HideUI( const QStringList& = QStringList() ) ;
+	void HideUI( const engines::engine::Options& = engines::engine::Options() ) ;
 	void closeEvent( QCloseEvent * ) ;
-	Ui::cryfscreateoptions * m_ui ;
-	std::function< void( const QStringList& ) > m_function ;
+        Ui::ecryptfscreateoptions * m_ui ;
+	std::function< void( const engines::engine::Options& ) > m_function ;
 };
 
-#endif // CRYFSCREATEOPTIONS_H
+#endif // ECRYPTFSCREATEOPTIONS_H

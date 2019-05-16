@@ -21,7 +21,9 @@
 #include "utility.h"
 #include "siritask.h"
 #include "task.hpp"
-#include "winfsp.h"
+#include "win.h"
+#include "settings.h"
+#include "engines.h"
 
 #include <QMetaObject>
 #include <QtGlobal>
@@ -30,8 +32,6 @@
 
 #include <vector>
 #include <utility>
-
-enum class background_thread{ True,False } ;
 
 QString mountinfo::encodeMountPath( const QString& e )
 {
@@ -106,23 +106,13 @@ static QStringList _macox_volumes()
 	return s ;
 }
 
-static std::vector< SiriKali::Winfsp::mountOptions > _win_volumes( background_thread thread )
-{
-	if( thread == background_thread::True ){
-
-		return SiriKali::Winfsp::getMountOptions() ;
-	}else{
-		return Task::await( SiriKali::Winfsp::getMountOptions ) ;
-	}
-}
-
-static QStringList _windows_volumes( background_thread thread )
+static QStringList _windows_volumes()
 {
 	QStringList s ;
 
 	const QString w = "x x x:x x %1 %2,x - %3 %4 x" ;
 
-	for( const auto& e : _win_volumes( thread ) ){
+	for( const auto& e : SiriKali::Windows::getMountOptions() ){
 
 		auto fs = "fuse." + e.subtype ;
 
@@ -134,7 +124,7 @@ static QStringList _windows_volumes( background_thread thread )
 	return s ;
 }
 
-static QStringList _unlocked_volumes( background_thread thread )
+static QStringList _unlocked_volumes()
 {
 	if( utility::platformIsLinux() ){
 
@@ -144,7 +134,7 @@ static QStringList _unlocked_volumes( background_thread thread )
 
 		return _macox_volumes() ;
 	}else{
-		return _windows_volumes( thread ) ;
+		return _windows_volumes() ;
 	}
 }
 
@@ -152,7 +142,7 @@ mountinfo::mountinfo( QObject * parent,bool e,std::function< void() >&& quit ) :
 	m_parent( parent ),
 	m_quit( std::move( quit ) ),
 	m_announceEvents( e ),
-	m_oldMountList( _unlocked_volumes( background_thread::False ) )
+	m_oldMountList( _unlocked_volumes() )
 {
 	if( utility::platformIsLinux() ){
 
@@ -223,6 +213,19 @@ Task::future< std::vector< volumeInfo > >& mountinfo::unlockedVolumes()
 			}
 		} ;
 
+		auto _starts_with = []( const engines::engine& e,const QString& s ){
+
+			for( const auto& it : e.names() ){
+
+				if( s.startsWith( it + "@" ) ){
+
+					return true ;
+				}
+			}
+
+			return false ;
+		} ;
+
 		auto _fs = []( QString e ){
 
 			e.replace( "fuse.","" ) ;
@@ -239,37 +242,34 @@ Task::future< std::vector< volumeInfo > >& mountinfo::unlockedVolumes()
 
 		volumeInfo::mountinfo info ;
 
-		for( const auto& it : _unlocked_volumes( background_thread::True ) ){
+		const auto& engines = engines::instance() ;
 
-			if( volumeInfo::supported( it ) ){
+		for( const auto& it : _unlocked_volumes() ){
 
-				const auto& k = utility::split( it,' ' ) ;
+			const auto& k = utility::split( it,' ' ) ;
 
-				const auto s = k.size() ;
+			const auto s = k.size() ;
 
-				if( s < 6 ){
+			if( s < 6 ){
 
-					continue ;
-				}
+				continue ;
+			}
 
-				const auto& cf = k.at( s - 2 ) ;
+			const auto& cf = k.at( s - 2 ) ;
 
-				const auto& m = k.at( 4 ) ;
+			const auto& m = k.at( 4 ) ;
 
-				const auto& fs = k.at( s - 3 ) ;
+			const auto& fs = k.at( s - 3 ) ;
 
-				if( utility::startsWithAtLeastOne( cf,"encfs@",
-								   "cryfs@",
-								   "securefs@",
-								   "gocryptfs@",
-								   "sshfs@" ) ){
+			const auto& engine = engines.getByFuseName( fs ) ;
+
+			if( engine.known() ){
+
+				if( _starts_with( engine,cf ) ){
 
 					info.volumePath = _decode( cf,true ) ;
 
-				}else if( utility::equalsAtleastOne( fs,"fuse.gocryptfs",
-								     "fuse.gocryptfs-reverse",
-								     "ecryptfs",
-								     "fuse.sshfs" ) ){
+				}else if( engine.setsCipherPath() ){
 
 					info.volumePath = _decode( cf,false ) ;
 				}else{
@@ -301,7 +301,7 @@ void mountinfo::stop()
 
 void mountinfo::volumeUpdate()
 {
-	m_newMountList = _unlocked_volumes( background_thread::False ) ;
+	m_newMountList = _unlocked_volumes() ;
 
 	auto _volumeWasMounted = [ & ](){
 
@@ -387,7 +387,7 @@ void mountinfo::pollForUpdates()
 
 	m_stop = [ this ](){ m_exit = true ; } ;
 
-	auto interval = utility::pollForUpdatesInterval() ;
+	auto interval = settings::instance().pollForUpdatesInterval() ;
 
 	Task::run( [ &,interval ](){
 
@@ -449,5 +449,5 @@ void mountinfo::osxMonitor()
 
 void mountinfo::windowsMonitor()
 {
-	SiriKali::Winfsp::updateVolumeList( [ this ]{ this->updateVolume() ; } ) ;
+	SiriKali::Windows::updateVolumeList( [ this ]{ this->updateVolume() ; } ) ;
 }
