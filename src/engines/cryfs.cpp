@@ -19,24 +19,36 @@
 
 #include "cryfs.h"
 #include "cryfscreateoptions.h"
+#include "../win.h"
 
 static engines::engine::BaseOptions _setOptions()
 {
 	engines::engine::BaseOptions s ;
 
-	s.autoMountsOnCreate  = true ;
-	s.hasGUICreateOptions = true ;
-	s.setsCipherPath      = true ;
+	auto a = "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{26116061-4F99-4C44-A178-2153FA396308}" ;
+	auto b = "InstallLocation" ;
+
 	s.supportsMountPathsOnWindows = true ;
-
-	s.configFileArgument  = "--config" ;
-
-	s.configFileNames = QStringList{ "cryfs.config",".cryfs.config" } ;
-
-	s.fuseNames = QStringList{ "fuse.cryfs" } ;
-	s.names     = QStringList{ "cryfs" } ;
-
-	s.notFoundCode = engines::engine::status::cryfsNotFound ;
+	s.customBackend         = false ;
+	s.requiresAPassword     = true ;
+	s.hasConfigFile         = true ;
+	s.autoMountsOnCreate    = true ;
+	s.hasGUICreateOptions   = true ;
+	s.setsCipherPath        = true ;
+	s.passwordFormat        = "%{password}" ;
+	s.idleString            = "--unmount-idle" ;
+	s.executableName        = "cryfs" ;
+	s.incorrectPasswordText = "Could not load config file. Did you enter the correct password?" ;
+	s.configFileArgument    = "--config" ;
+	s.windowsInstallPathRegistryKey   = a ;
+	s.windowsInstallPathRegistryValue = b ;
+	s.windowsUnMountCommand = SiriKali::Windows::engineInstalledDir( a,b ) + "\\bin\\cryfs-unmount.exe" ;
+	s.successfulMountedList = QStringList{ "Mounting filesystem." } ;
+	s.configFileNames       = QStringList{ "cryfs.config",".cryfs.config" } ;
+	s.fuseNames             = QStringList{ "fuse.cryfs" } ;
+	s.failedToMountList     = QStringList{ "Error" } ;
+	s.names                 = QStringList{ "cryfs" } ;
+	s.notFoundCode          = engines::engine::status::cryfsNotFound ;
 
 	return s ;
 }
@@ -47,8 +59,11 @@ cryfs::cryfs() : engines::engine( _setOptions() )
 	qputenv( "CRYFS_FRONTEND","noninteractive" ) ;
 }
 
-engines::engine::args cryfs::command( const engines::engine::cmdArgsList& args ) const
+engines::engine::args cryfs::command( const QString& password,
+				      const engines::engine::cmdArgsList& args ) const
 {
+	Q_UNUSED( password ) ;
+
 	auto separator = [](){
 
 		auto m = utility::unwrap( utility::backendIsLessThan( "cryfs","0.10" ) ) ;
@@ -74,7 +89,7 @@ engines::engine::args cryfs::command( const engines::engine::cmdArgsList& args )
 
 	if( !args.opt.idleTimeout.isEmpty() ){
 
-		exeOptions.addPair( "--unmount-idle",args.opt.idleTimeout ) ;
+		exeOptions.addPair( this->idleString(),args.opt.idleTimeout ) ;
 	}
 
 	if( args.create ){
@@ -122,7 +137,7 @@ engines::engine::status cryfs::errorCode( const QString& e,int s ) const
 		 * Falling back to parsing strings
 		 */
 
-		if( e.contains( "Could not load config file. Did you enter the correct password?" ) ){
+		if( e.contains( this->incorrectPasswordText() ) ){
 
 			return engines::engine::status::cryfsBadPassword ;
 
@@ -136,11 +151,6 @@ engines::engine::status cryfs::errorCode( const QString& e,int s ) const
 	return engines::engine::status::backendFail ;
 }
 
-QString cryfs::setPassword( const QString& e ) const
-{
-	return e ;
-}
-
 QString cryfs::installedVersionString() const
 {
 	if( m_version.isEmpty() ){
@@ -149,20 +159,6 @@ QString cryfs::installedVersionString() const
 	}
 
 	return m_version ;
-}
-
-engines::engine::error cryfs::errorCode( const QString& e ) const
-{
-	if( e.contains( "Mounting filesystem." ) ){
-
-		return engines::engine::error::Success ;
-
-	}else if( e.contains( "Error" ) ){
-
-		return engines::engine::error::Failed ;
-	}else{
-		return engines::engine::error::Continue ;
-	}
 }
 
 void cryfs::GUICreateOptionsinstance( QWidget * parent,engines::engine::function function ) const

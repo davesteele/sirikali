@@ -25,19 +25,25 @@ static engines::engine::BaseOptions _setOptions()
 {
 	engines::engine::BaseOptions s ;
 
-	s.autoMountsOnCreate  = false ;
-	s.hasGUICreateOptions = true ;
-	s.setsCipherPath      = false ;
 	s.supportsMountPathsOnWindows = false ;
-
-	s.configFileArgument  = "--config" ;
-
-	s.configFileNames = QStringList{ ".securefs.json","securefs.json" } ;
-
-	s.fuseNames = QStringList{ "fuse.securefs" } ;
-	s.names     = QStringList{ "securefs" } ;
-
-	s.notFoundCode = engines::engine::status::securefsNotFound ;
+	s.customBackend         = false ;
+	s.requiresAPassword     = true ;
+	s.hasConfigFile         = true ;
+	s.autoMountsOnCreate    = false ;
+	s.hasGUICreateOptions   = true ;
+	s.setsCipherPath        = false ;
+	s.passwordFormat        = "%{password}\n%{password}" ;
+	s.executableName        = "securefs" ;
+	s.incorrectPasswordText = "Invalid password" ;
+	s.configFileArgument    = "--config" ;
+	s.volumePropertiesCommands = QStringList{ "securefs info %{cipherFolder}" } ;
+	s.windowsUnMountCommand = "sirikali.exe -T" ;
+	s.configFileNames       = QStringList{ ".securefs.json","securefs.json" } ;
+	s.fuseNames             = QStringList{ "fuse.securefs" } ;
+	s.names                 = QStringList{ "securefs" } ;
+	s.failedToMountList     = QStringList{ "Error","init" } ;
+	s.successfulMountedList = QStringList{ "has been started","init" } ;
+	s.notFoundCode          = engines::engine::status::securefsNotFound ;
 
 	return s ;
 }
@@ -46,8 +52,11 @@ securefs::securefs() : engines::engine( _setOptions() )
 {
 }
 
-engines::engine::args securefs::command( const engines::engine::cmdArgsList& args ) const
+engines::engine::args securefs::command( const QString& password,
+					 const engines::engine::cmdArgsList& args ) const
 {
+	Q_UNUSED( password ) ;
+
 	engines::engine::commandOptions m( args,this->name(),this->name() ) ;
 
 	if( args.create ){
@@ -85,25 +94,11 @@ engines::engine::args securefs::command( const engines::engine::cmdArgsList& arg
 	}
 }
 
-engines::engine::error securefs::errorCode( const QString& e ) const
-{
-	if( utility::containsAtleastOne( e,"has been started","init" ) ){
-
-		return engines::engine::error::Success ;
-
-	}else if( e.contains( "Error" ) ){
-
-		return engines::engine::error::Failed ;
-	}else{
-		return engines::engine::error::Continue ;
-	}
-}
-
 engines::engine::status securefs::errorCode( const QString& e,int s ) const
 {
 	Q_UNUSED( s ) ;
 
-	if( e.contains( "Invalid password" ) ){
+	if( e.contains( this->incorrectPasswordText() ) ){
 
 		return engines::engine::status::securefsBadPassword ;
 
@@ -113,11 +108,6 @@ engines::engine::status securefs::errorCode( const QString& e,int s ) const
 	}else{
 		return engines::engine::status::backendFail ;
 	}
-}
-
-QString securefs::setPassword( const QString& e ) const
-{
-	return e + "\n" + e ;
 }
 
 QString securefs::installedVersionString() const

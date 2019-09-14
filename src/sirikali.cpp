@@ -46,6 +46,7 @@
 
 #include <unistd.h>
 
+#include "createbackendwindow.h"
 #include "filemanager.h"
 #include "dialogmsg.h"
 #include "tablewidget.h"
@@ -65,12 +66,13 @@
 #include "engines.h"
 
 #include "favorites2.h"
+#include "favorites.h"
 
-static utility::volumeList _readFavorites()
+static favorites::volumeList _readFavorites()
 {
-	utility::volumeList e ;
+	favorites::volumeList e ;
 
-	for( auto&& it : settings::instance().readFavorites() ){
+	for( auto&& it : favorites::instance().readFavorites() ){
 
 		e.emplace_back( std::move( it ),QByteArray() ) ;
 	}
@@ -86,6 +88,7 @@ sirikali::sirikali() :
 	m_debugWindow(),
 	m_signalHandler( this,this->getEmergencyShutDown() )
 {
+	utility::setMainQWidget( this ) ;
 }
 
 std::function< void( systemSignalHandler::signal ) > sirikali::getEmergencyShutDown()
@@ -222,8 +225,32 @@ void sirikali::setUpApp( const QString& volume )
 	connect( m_ui->tableWidget,SIGNAL( itemClicked( QTableWidgetItem * ) ),
 		 this,SLOT( itemClicked( QTableWidgetItem * ) ) ) ;
 
-	connect( m_ui->pbunlockvolume,SIGNAL( clicked() ),
-		 this,SLOT( unlockVolume() ) ) ;
+	if( engines::instance().atLeastOneDealsWithFiles() ){
+
+		auto m = new QMenu( this ) ;
+
+		auto _addAction = [ & ]( const QString& a,const char * b,bool c ){
+
+			auto ac = m->addAction( a ) ;
+			m_actionPair.emplace_back( ac,b ) ;
+
+			connect( ac,&QAction::triggered,[ = ](){
+
+				this->unlockVolume( c ) ;
+			} ) ;
+		} ;
+
+		_addAction( tr( "Mount Folder" ),"Mount Folder",true ) ;
+
+		_addAction( tr( "Mount File" ),"Mount File",false ) ;
+
+		m_ui->pbunlockvolume->setMenu( m ) ;
+	}else{
+		connect( m_ui->pbunlockvolume,&QPushButton::clicked,[ this ](){
+
+			this->unlockVolume( true ) ;
+		} ) ;
+	}
 
 	m_ui->pbcreate->setMenu( [ this ](){
 
@@ -294,6 +321,25 @@ void sirikali::setUpApp( const QString& volume )
 	if( utility::debugEnabled() || utility::debugFullEnabled() ){
 
 		this->showDebugWindow() ;
+	}
+
+	auto e = settings::instance().runCommandOnInterval() ;
+	auto p = settings::instance().runCommandOnIntervalTime() ;
+
+	if( !e.isEmpty() ){
+
+		e = utility::Task::makePath( e ) ;
+
+		auto s = new QTimer( this ) ;
+
+		connect( s,&QTimer::timeout,[ this,e ](){
+
+			this->runIntervalCustomCommand( e ) ;
+		} ) ;
+
+		s->start( p * 60 * 1000 ) ;
+
+		this->runIntervalCustomCommand( e ) ;
 	}
 }
 
@@ -470,7 +516,6 @@ void sirikali::favoriteClicked( QAction * ac )
 	if( e == "Manage Favorites" ){
 
 		favorites2::instance( this ) ;
-		//favorites::instance( this ) ;
 	}else{
 		if( e == "Mount All" ){
 
@@ -497,7 +542,9 @@ void sirikali::favoriteClicked( QAction * ac )
 
 				if( _found( it ) ){
 
-					if( it.first.volumeNeedNoPassword && it.first.volumePath.startsWith( "sshfs " ) ){
+					auto s = siritask::mountEngine( it.first.volumePath,QString() ).engine.name() ;
+
+					if( it.first.volumeNeedNoPassword && s == "sshfs" ){
 
 						this->disableAll() ;
 
@@ -538,6 +585,11 @@ void sirikali::startGUI( const std::vector< volumeInfo >& m )
 	}
 }
 
+void sirikali::createbackendwindow()
+{
+	createBackendWIndow::instance( this ) ;
+}
+
 void sirikali::raiseWindow( const QString& volume )
 {
 	this->setVisible( true ) ;
@@ -553,13 +605,13 @@ int sirikali::start( QApplication& e )
 
 	const auto l = QCoreApplication::arguments() ;
 
-	for( const QString& it : l ){
+	if( utility::platformIsWindows() ){
 
-		if( it.startsWith( "terminateProcess-" ) ){
+		if( l.size() > 1 && l.at( 1 ).startsWith( "-T" ) ){
 
-			auto s = it ;
+			auto s = l.at( 1 ) ;
 
-			s.replace( "terminateProcess-","" ) ;
+			s.replace( "-T","" ) ;
 
 			return SiriKali::Windows::terminateProcess( s.toULong() ) ;
 		}
@@ -826,7 +878,7 @@ void sirikali::unlockVolume( const QStringList& l )
 	}
 }
 
-void sirikali::mountMultipleVolumes( utility::volumeList e )
+void sirikali::mountMultipleVolumes( favorites::volumeList e )
 {
 	if( !e.empty() ){
 
@@ -847,11 +899,11 @@ void sirikali::autoMountFavoritesOnAvailable( QString m )
 {
 	if( settings::instance().autoMountFavoritesOnAvailable() ){
 
-		utility::volumeList e ;
+		favorites::volumeList e ;
 
 		for( auto&& it : _readFavorites() ){
 
-			if( it.first.volumePath.startsWith( m ) && it.first.autoMount() ){
+			if( it.first.volumePath.startsWith( m ) && it.first.autoMount.True() ){
 
 				e.emplace_back( std::move( it ) ) ;
 			}
@@ -863,7 +915,7 @@ void sirikali::autoMountFavoritesOnAvailable( QString m )
 
 void sirikali::autoUnlockVolumes( const std::vector< volumeInfo >& s )
 {
-	utility::volumeList e ;
+	favorites::volumeList e ;
 
 	auto _mounted = [ & ]( const QString& e ){
 
@@ -882,7 +934,7 @@ void sirikali::autoUnlockVolumes( const std::vector< volumeInfo >& s )
 
 		const auto& m = it.first ;
 
-		if( m.autoMount() && !_mounted( m.volumePath )){
+		if( m.autoMount.True() && !_mounted( m.volumePath )){
 
 			e.emplace_back( std::move( it ) ) ;
 		}
@@ -891,7 +943,7 @@ void sirikali::autoUnlockVolumes( const std::vector< volumeInfo >& s )
 	this->mountMultipleVolumes( this->autoUnlockVolumes( std::move( e ) ) ) ;
 }
 
-utility::volumeList sirikali::autoUnlockVolumes( utility::volumeList l,bool autoOpenFolderOnMount )
+favorites::volumeList sirikali::autoUnlockVolumes( favorites::volumeList l,bool autoOpenFolderOnMount )
 {
 	if( l.empty() ){
 
@@ -914,9 +966,9 @@ utility::volumeList sirikali::autoUnlockVolumes( utility::volumeList l,bool auto
 
 	auto _mountVolumes = [ & ](){
 
-		utility::volumeList e ;
+		favorites::volumeList e ;
 
-		auto _mount = [ & ]( utility::volumeList& q,
+		auto _mount = [ & ]( favorites::volumeList& q,
 				     const std::pair< favorites::entry,QByteArray >& e,
 				     const QByteArray& key,
 				     bool s ){
@@ -968,9 +1020,73 @@ utility::volumeList sirikali::autoUnlockVolumes( utility::volumeList l,bool auto
 	}
 }
 
-void sirikali::ecryptfsProperties()
+void sirikali::volumeProperties()
+{
+	auto table = m_ui->tableWidget ;
+
+	auto row = table->currentRow() ;
+
+	QString cipherPath ;
+	QString mountPath ;
+	QString volumeType ;
+
+	utility2::stringListToStrings( tablewidget::rowEntries( table,row ),
+				       cipherPath,
+				       mountPath,
+				       volumeType ) ;
+
+	const auto& engine = engines::instance().getByName( volumeType ) ;
+
+	for( const auto& it : engine.volumePropertiesCommands() ){
+
+		auto a = utility::split( it,' ' ) ;
+		auto b = utility::executableFullPath( a.first() ) ;
+		a.removeFirst() ;
+		auto c = a.join( " " ) ;
+
+		if( !b.isEmpty() ){
+
+			cipherPath = utility::Task::makePath( cipherPath ) ;
+			mountPath  = utility::Task::makePath( mountPath ) ;
+
+			c.replace( "%{cipherFolder}",cipherPath ) ;
+			c.replace( "%{plainFolder}",mountPath ) ;
+
+			auto d = utility::Task::makePath( b ) ;
+
+			auto e = utility::Task::run( d + " " + c ).await() ;
+
+			if( e.success() ){
+
+				return DialogMsg( this ).ShowUIInfo( tr( "INFORMATION" ),true,e.stdOut() ) ;
+			}
+		}
+	}
+
+	this->genericVolumeProperties() ;
+}
+
+void sirikali::genericVolumeProperties()
 {
 	this->disableAll() ;
+
+	if( utility::platformIsWindows() ){
+
+		auto table = m_ui->tableWidget ;
+
+		auto row = table->currentRow() ;
+
+		auto m = SiriKali::Windows::volumeProperties( table->item( row,1 )->text() ) ;
+
+		if( m.isEmpty() ){
+
+			DialogMsg( this ).ShowUIOK( tr( "ERROR" ),tr( "Failed To Read Volume Properties" ) ) ;
+		}else{
+			DialogMsg( this ).ShowUIInfo( tr( "INFORMATION" ),true,m ) ;
+		}
+
+		return this->enableAll() ;
+	}
 
 	auto s = [ this ](){
 
@@ -1009,350 +1125,24 @@ void sirikali::ecryptfsProperties()
 	this->enableAll() ;
 }
 
-void sirikali::cryfsProperties()
-{
-	this->disableAll() ;
-
-	auto m = [ this ](){
-
-		auto table = m_ui->tableWidget ;
-
-		auto row = table->currentRow() ;
-
-		if( row >= 0 ){
-
-			return table->item( row,1 )->text().toLatin1() ;
-		}else{
-			return QByteArray() ;
-		}
-	}() ;
-
-	auto vfs = utility::fileSystemInfo( m ).await() ;
-
-	if( !vfs.valid ){
-
-		DialogMsg( this ).ShowUIOK( tr( "ERROR" ),tr( "Failed To Read Volume Properties" ) ) ;
-
-		return this->enableAll() ;
-	}
-
-	DialogMsg( this ).ShowUIInfo( tr( "INFORMATION" ),true,[ & ](){
-
-		auto _prettify = []( quint64 s ){
-
-			auto _convert = [ & ]( const char * p,double q ){
-
-				auto e = QString::number( double( s ) / q,'f',2 ) ;
-
-				e.remove( ".00" ) ;
-
-				return QString( "%1 %2" ).arg( e,p ) ;
-			} ;
-
-			switch( QString::number( s ).size() ){
-
-				case 0 :
-				case 1 : case 2 : case 3 :
-
-					return QString( "%1 B" ).arg( QString::number( s ) ) ;
-
-				case 4 : case 5 : case 6 :
-
-					return _convert( "KB",1024 ) ;
-
-				case 7 : case 8 : case 9 :
-
-					return _convert( "MB",1048576 ) ;
-
-				case 10: case 11 : case 12 :
-
-					return _convert( "GB",1073741824 ) ;
-
-				default:
-					return _convert( "TB",1024.0 * 1073741824 ) ;
-			}
-		} ;
-
-		return QString( [](){
-
-			auto l = { tr( "Block Size: %1" ),
-				   tr( "Used Blocks: %2" ),
-				   tr( "Free Blocks: %3" ),
-				   tr( "Total Blocks %4" ),
-				   tr( "Used Space: %5" ),
-				   tr( "Free Space: %6" ),
-				   tr( "Total Space: %7" ),
-				   tr( "Used %: %8" ) } ;
-
-			QString e ;
-
-			for( const auto& it : l ){
-
-				e += it + "\n\n" ;
-			}
-
-			e.truncate( e.size() - 2 ) ;
-
-			return e ;
-
-		}() ).arg( [ & ](){
-
-			return _prettify( vfs.f_bsize ) ;
-
-		}(),[ & ](){
-
-			return QString::number( vfs.f_blocks - vfs.f_bavail ) ;
-
-		}(),[ & ](){
-
-			return QString::number( vfs.f_bfree ) ;
-
-		}(),[ & ](){
-
-			return QString::number( vfs.f_blocks ) ;
-
-		}(),[ & ](){
-
-			return _prettify( vfs.f_bsize * ( vfs.f_blocks - vfs.f_bavail ) ) ;
-
-		}(),[ & ](){
-
-			return _prettify( vfs.f_bsize * vfs.f_bavail ) ;
-
-		}(),[ & ](){
-
-			return _prettify( vfs.f_bsize * vfs.f_blocks ) ;
-
-		}(),[ & ]()->QString{
-
-			if( vfs.f_bfree == 0 ){
-
-				return "100%" ;
-			}else{
-				quint64 s = vfs.f_blocks - vfs.f_bavail ;
-
-				auto e = double( s ) / double( vfs.f_blocks ) ;
-
-				return QString::number( e * 100,'f',2 ) + "%" ;
-			}
-		}() ) ;
-	}() ) ;
-
-	this->enableAll() ;
-}
-
-static utility::result< QByteArray > _volume_properties( const QString& cmd,
-							 const std::pair< QString,QString >& args,
-							 const QString& path )
-{
-	auto e = utility::Task::run( cmd + args.first + path ).await() ;
-
-	if( e.success() ){
-
-		return e.stdOut() ;
-	}else{
-		for( const auto& it : settings::instance().readFavorites() ){
-
-			if( utility::Task::makePath( it.volumePath ) == path ){
-
-				auto s = [ & ]{
-
-					if( cmd.endsWith( "gocryptfs\"" ) ){
-
-						auto a = utility::Task::makePath( it.configFilePath ) ;
-						auto b = utility::Task::makePath( it.volumePath ) ;
-
-						return a + " " + b ;
-
-					}else if( utility::endsWithAtLeastOne( cmd,"encfsctl\"","encfsctl.exe\"" ) ){
-
-						auto s = it.configFilePath ;
-
-						int index = s.lastIndexOf( "/" ) ;
-						if( index != -1 ){
-
-							s.remove( index,s.length() - index ) ;
-						}
-
-						return utility::Task::makePath( s ) ;
-					}else{
-						return utility::Task::makePath( it.configFilePath ) ;
-					}
-				}() ;
-
-				e = utility::Task::run( cmd + args.first + args.second + s ).await() ;
-
-				if( e.success() ){
-
-					return e.stdOut() ;
-				}else{
-					break ;
-				}
-			}
-		}
-
-		return utility::result< QByteArray >() ;
-	}
-}
-
-static void _volume_properties( const QString& cmd,const std::pair<QString,QString>& args,
-				QTableWidget * table,QWidget * w )
-{
-	auto exe = utility::executableFullPath( cmd ) ;
-
-	auto path = [ & ](){
-
-		auto row = table->currentRow() ;
-
-		if( row < 0 ){
-
-			return QString() ;
-		}else{
-			auto m = table->item( row,2 )->text() ;
-
-			if( cmd == "gocryptfs" && m == "gocryptfs-reverse" ){
-
-				return utility::Task::makePath( table->item( row,1 )->text() ) ;
-			}else{
-				return utility::Task::makePath( table->item( row,0 )->text() ) ;
-			}
-		}
-	}() ;
-
-	if( exe.isEmpty() ){
-
-		DialogMsg( w ).ShowUIOK( QObject::tr( "ERROR" ),
-					 QObject::tr( "Failed To Find %1 Executable" ).arg( cmd ) ) ;
-	}else{
-		auto e = _volume_properties( utility::Task::makePath( exe ),args,path ) ;
-
-		if( e ){
-
-			auto& s = e.value() ;
-
-			if( cmd == "gocryptfs" ){
-
-				s.replace( "Creator:      ","Creator: " ).replace( "\n","\n\n" ) ;
-			}
-
-			DialogMsg( w ).ShowUIInfo( QObject::tr( "INFORMATION" ),true,s ) ;
-		}else{
-			DialogMsg( w ).ShowUIOK( QObject::tr( "ERROR" ),
-						 QObject::tr( "Failed To Get Volume Properties" ) ) ;
-		}
-	}
-}
-
-void sirikali::encfsProperties()
-{
-	this->disableAll() ;
-
-	_volume_properties( "encfsctl",{ " ","" },m_ui->tableWidget,this ) ;
-
-	this->enableAll() ;
-}
-
-void sirikali::securefsProperties()
-{
-	this->disableAll() ;
-
-	_volume_properties( "securefs",{ " info ","" },m_ui->tableWidget,this ) ;
-
-	this->enableAll() ;
-}
-
-void sirikali::gocryptfsProperties()
-{
-	this->disableAll() ;
-
-	_volume_properties( "gocryptfs",{ " -info "," -config " },m_ui->tableWidget,this ) ;
-
-	this->enableAll() ;
-}
-
-void sirikali::sshfsProperties()
-{
-	auto table = m_ui->tableWidget ;
-
-	auto row = table->currentRow() ;
-
-	auto m = SiriKali::Windows::volumeProperties( table->item( row,1 )->text() ) ;
-
-	if( m.isEmpty() ){
-
-		DialogMsg( this ).ShowUIOK( tr( "ERROR" ),tr( "Failed To Read Volume Properties" ) ) ;
-	}else{
-		DialogMsg( this ).ShowUIInfo( tr( "INFORMATION" ),true,m ) ;
-	}
-}
-
 void sirikali::showContextMenu( QTableWidgetItem * item,bool itemClicked )
 {
-	struct volumeType{ const char * slot ; bool enabled ; } ;
-
 	QMenu m ;
 
 	m.setFont( this->font() ) ;
 
-	auto _addAction = [ & ]( const auto& txt,const volumeType& e ){
+	auto _addAction = [ & ]( const auto& txt,const char * slot ){
 
 		auto ac = m.addAction( txt ) ;
 
-		if( e.enabled ){
-
-			ac->setEnabled( true ) ;
-
-			connect( ac,SIGNAL( triggered() ),this,e.slot ) ;
-		}else{
-			ac->setEnabled( false ) ;
-		}
+		connect( ac,SIGNAL( triggered() ),this,slot ) ;
 	} ;
 
-	_addAction( tr( "Open Folder" ),{ SLOT( slotOpenFolder() ),true } ) ;
+	_addAction( tr( "Open Folder" ),SLOT( slotOpenFolder() ) ) ;
 
-	_addAction( tr( "Unmount" ),{ SLOT( pbUmount() ),true } ) ;
+	_addAction( tr( "Unmount" ),SLOT( pbUmount() ) ) ;
 
-	_addAction( tr( "Properties" ),[ this ]()->volumeType{
-
-		auto table = m_ui->tableWidget ;
-
-		auto row = table->currentRow() ;
-
-		if( row >= 0 ){
-
-			auto e = table->item( row,2 )->text() ;
-
-			if( e == "cryfs" ){
-
-				return { SLOT( cryfsProperties() ),!utility::platformIsWindows() } ;
-
-			}else if( e == "ecryptfs" ){
-
-				return { SLOT( ecryptfsProperties() ),true } ;
-
-			}else if( e == "securefs" ){
-
-				return { SLOT( securefsProperties() ),true } ;
-
-			}else if( e == "encfs" ){
-
-				return { SLOT( encfsProperties() ),true } ;
-
-			}else if( utility::containsAtleastOne( e,"gocryptfs","gocryptfs-reverse" ) ){
-
-				return { SLOT( gocryptfsProperties() ),true } ;
-
-			}else if( e == "sshfs" ){
-
-				if( utility::platformIsWindows() ){
-
-					return { SLOT( sshfsProperties() ),true } ;
-				}
-			}
-		}
-
-		return { nullptr,false } ;
-	}() ) ;
+	_addAction( tr( "Properties" ),SLOT( volumeProperties() ) ) ;
 
 	m.addSeparator() ;
 
@@ -1455,6 +1245,8 @@ void sirikali::setUpShortCuts()
 
 	this->addAction( _addAction( { Qt::CTRL + Qt::Key::Key_W },SLOT( hideWindow() ) ) ) ;
 
+	this->addAction( _addAction( { Qt::CTRL + Qt::Key::Key_B },SLOT( createbackendwindow() ) ) ) ;
+
 	this->addAction( [ & ](){
 
 		auto e = _addAction( { Qt::CTRL + Qt::Key::Key_Q },SLOT( closeApplication() ) ) ;
@@ -1509,7 +1301,7 @@ void sirikali::dragEnterEvent( QDragEnterEvent * e )
 
 void sirikali::dropEvent( QDropEvent * e )
 {
-	utility::volumeList s ;
+	favorites::volumeList s ;
 
 	for( const auto& it : e->mimeData()->urls() ){
 
@@ -1557,7 +1349,6 @@ void sirikali::createVolume( QAction * ac )
 		if( s == "Sshfs" ){
 
 			favorites2::instance( this,favorites::type::sshfs ) ;
-			//favorites::instance( this,favorites::type::sshfs ) ;
 		}else{
 			this->mount( volumeInfo(),s ) ;
 		}
@@ -1597,12 +1388,20 @@ void sirikali::showMoungDialog( const QString& volume,const QString& m_point )
 	}
 }
 
-void sirikali::unlockVolume()
+void sirikali::unlockVolume( bool dir )
 {
 	this->disableAll() ;
 
-	auto e = tr( "Select An Encrypted Volume Directory" ) ;
-	auto path = utility::getExistingDirectory( this,e,settings::instance().homePath() ) ;
+	QString path ;
+
+	if( dir ){
+
+		auto e = tr( "Select An Encrypted Volume Directory" ) ;
+		path = utility::getExistingDirectory( this,e,settings::instance().homePath() ) ;
+	}else{
+		auto e = tr( "Select A File To Be Mounted" ) ;
+		path = utility::getExistingFile( this,e,settings::instance().homePath() ) ;
+	}
 
 	if( path.isEmpty() ){
 
@@ -1618,6 +1417,41 @@ QFont sirikali::getSystemVolumeFont()
 	f.setItalic( !f.italic() ) ;
 	f.setBold( !f.bold() ) ;
 	return f ;
+}
+
+void sirikali::runIntervalCustomCommand( const QString& cmd )
+{
+	this->processMountedVolumes( [ = ]( const sirikali::mountedEntry& s ){
+
+		auto a = utility::Task::makePath( s.cipherPath ) ;
+		auto b = utility::Task::makePath( s.mountPoint ) ;
+		auto c = s.volumeType ;
+
+		auto key = utility::getKey( s.cipherPath,m_secrets ) ;
+
+		Task::exec( [ = ](){
+
+			const auto& e = utility::systemEnvironment() ;
+
+			auto m = QString( "%1 %2 %3 %4" ).arg( cmd,a,b,c ) ;
+
+			auto r = [ & ](){
+
+				if( key.isEmpty() ){
+
+					return Task::process::run( m,{},-1,{},e ).get() ;
+				}else{
+					auto s = e ;
+
+					s.insert( settings::instance().environmentalVariableVolumeKey(),key ) ;
+
+					return Task::process::run( m,{},-1,{},s ).get() ;
+				}
+			}() ;
+
+			utility::logCommandOutPut( r,m ) ;
+		} ) ;
+	} ) ;
 }
 
 void sirikali::addEntryToTable( const QStringList& l )
@@ -1664,6 +1498,18 @@ void sirikali::updateList( const volumeInfo& entry )
 	}
 }
 
+bool sirikali::unMountVolume( const sirikali::mountedEntry& e )
+{
+	if( siritask::encryptedFolderUnMount( e.cipherPath,e.mountPoint,e.volumeType ) ){
+
+		siritask::deleteMountFolder( e.mountPoint ) ;
+
+		return true ;
+	}else{
+		return false ;
+	}
+}
+
 void sirikali::pbUmount()
 {
 	auto table = m_ui->tableWidget ;
@@ -1682,14 +1528,30 @@ void sirikali::pbUmount()
 
 		utility::waitForOneSecond() ;
 
-		if( siritask::encryptedFolderUnMount( a,b,c ) ){
+		if( !this->unMountVolume( { a,b,c } ) ){
 
-			siritask::deleteMountFolder( b ) ;
-		}else{
 			DialogMsg( this ).ShowUIOK( tr( "ERROR" ),tr( "Failed To Unmount %1 Volume" ).arg( type ) ) ;
 
 			this->enableAll() ;
 		}
+	}
+}
+
+void sirikali::processMountedVolumes( std::function< void( const sirikali::mountedEntry& ) > function )
+{
+	auto table = m_ui->tableWidget ;
+
+	const auto cipherFolders = tablewidget::columnEntries( table,0 ) ;
+	const auto mountPoints   = tablewidget::columnEntries( table,1 ) ;
+	const auto fileSystems   = tablewidget::columnEntries( table,2 ) ;
+
+	for( auto r = cipherFolders.size() - 1 ; r >= 0 ; r-- ){
+
+		const auto& a = cipherFolders.at( r ) ;
+		const auto& b = mountPoints.at( r ) ;
+		const auto& c = fileSystems.at( r ) ;
+
+		function( { a,b,c } ) ;
 	}
 }
 
@@ -1701,25 +1563,10 @@ void sirikali::emergencyShutDown()
 
 	m_mountInfo.announceEvents( false ) ;
 
-	auto table = m_ui->tableWidget ;
+	this->processMountedVolumes( [ this ]( const sirikali::mountedEntry& e ){
 
-	const auto cipherFolders = tablewidget::columnEntries( table,0 ) ;
-	const auto mountPoints   = tablewidget::columnEntries( table,1 ) ;
-	const auto fileSystems   = tablewidget::columnEntries( table,2 ) ;
-
-	for( auto r = cipherFolders.size() - 1 ; r >= 0 ; r-- ){
-
-		const auto& a = cipherFolders.at( r ) ;
-		const auto& b = mountPoints.at( r ) ;
-		const auto& c = fileSystems.at( r ) ;
-
-		if( siritask::encryptedFolderUnMount( a,b,c,1 ) ){
-
-			tablewidget::deleteRow( table,b,1 ) ;
-
-			siritask::deleteMountFolder( b ) ;
-		}
-	}
+		this->unMountVolume( e ) ;
+	} ) ;
 
 	this->closeApplication( 0,"Emergency shut down" ) ;
 }
@@ -1730,27 +1577,27 @@ void sirikali::unMountAll()
 
 	this->disableAll() ;
 
-	auto table = m_ui->tableWidget ;
-
-	const auto cipherFolders = tablewidget::columnEntries( table,0 ) ;
-	const auto mountPoints   = tablewidget::columnEntries( table,1 ) ;
-	const auto fileSystems   = tablewidget::columnEntries( table,2 ) ;
-
 	utility::waitForOneSecond() ;
 
-	for( auto r = cipherFolders.size() - 1 ; r >= 0 ; r-- ){
+	this->processMountedVolumes( [ this ]( const mountedEntry& e ){
 
-		const auto& a = cipherFolders.at( r ) ;
-		const auto& b = mountPoints.at( r ) ;
-		const auto& c = fileSystems.at( r ) ;
+		if( this->unMountVolume( e ) ){
 
-		if( siritask::encryptedFolderUnMount( a,b,c ) ){
-
-			tablewidget::deleteRow( table,b,1 ) ;
-
-			siritask::deleteMountFolder( b ) ;
+			tablewidget::deleteRow( m_ui->tableWidget,e.mountPoint,1 ) ;
 
 			utility::waitForOneSecond() ;
+		}
+	} ) ;
+
+	auto m = m_ui->tableWidget->rowCount() ;
+
+	if( m > 0 ){
+
+		if( m == 1 ){
+
+			DialogMsg( this ).ShowUIOK( tr( "WARNING" ),tr( "Failed To Unmount 1 Volume." ) ) ;
+		}else{
+			DialogMsg( this ).ShowUIOK( tr( "WARNING" ),tr( "Failed To Unmount %1 Volumes." ).arg( m ) ) ;
 		}
 	}
 

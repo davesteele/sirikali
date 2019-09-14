@@ -61,6 +61,7 @@ public:
 	int start( QApplication& ) ;
 	~sirikali() ;
 private slots:
+	void createbackendwindow( void ) ;
 	void showDebugWindow( void ) ;
 	void configurationOptions( void ) ;
 	void FAQ( void ) ;
@@ -70,15 +71,11 @@ private slots:
 	void setUpApp( const QString& ) ;
 	void start( const QStringList& ) ;
 	void autoUpdateCheck( void ) ;
-	void gocryptfsProperties( void ) ;
-	void sshfsProperties( void ) ;
-	void cryfsProperties( void ) ;
-	void encfsProperties( void ) ;
-	void ecryptfsProperties( void ) ;
-	void securefsProperties( void ) ;
+	void volumeProperties() ;
+	void genericVolumeProperties( void ) ;
 	void unlockVolume( const QStringList& ) ;
 	void closeApplication( int = 0,const QString& = QString() ) ;
-	void unlockVolume( void ) ;
+	void unlockVolume( bool ) ;
 	void startGUI( const std::vector< volumeInfo >& ) ;
 	void showMoungDialog( const volumeInfo& ) ;
 	void showMoungDialog( const QString&,const QString& = QString() ) ;
@@ -112,12 +109,13 @@ private:
 
 	void showTrayIcon() ;
 
-	void mountMultipleVolumes( utility::volumeList ) ;
+	void mountMultipleVolumes( favorites::volumeList ) ;
 
 	QString resolveFavoriteMountPoint( const QString& ) ;
 
 	QFont getSystemVolumeFont( void ) ;
 
+	void runIntervalCustomCommand( const QString& ) ;
 	void cliCommand( const QStringList& ) ;
 	void updateVolumeList( const std::vector< volumeInfo >& ) ;
 	void openMountPoint( const QString& ) ;
@@ -132,9 +130,18 @@ private:
 	void setUpFont( void ) ;
 	void setUpShortCuts( void ) ;
 	void raiseWindow( const QString& = QString() ) ;
-	void autoUnlockVolumes( const std::vector< volumeInfo >& ) ;
+	void autoUnlockVolumes( const std::vector< volumeInfo >& ) ;	
+	favorites::volumeList autoUnlockVolumes( favorites::volumeList,bool = false ) ;
 
-	utility::volumeList autoUnlockVolumes( utility::volumeList,bool = false ) ;
+	struct mountedEntry{
+		const QString& cipherPath ;
+		const QString& mountPoint ;
+		const QString& volumeType ;
+	};
+
+	void processMountedVolumes( std::function< void( const sirikali::mountedEntry& ) > function ) ;
+
+	bool unMountVolume( const sirikali::mountedEntry& ) ;
 
 	Ui::sirikali * m_ui = nullptr ;
 

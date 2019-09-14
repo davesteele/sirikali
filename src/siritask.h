@@ -25,6 +25,7 @@
 #include "utility.h"
 #include "favorites.h"
 #include "engines.h"
+#include "secrets.h"
 
 #include <QVector>
 #include <QString>
@@ -40,8 +41,8 @@ namespace siritask
 			configFilePath( configFilePath )
 		{
 		}
-		Engine( const engines::engine& engine ) :
-			engine( engine )
+		Engine( const engines::engine& engine,const QString& s ) :
+			engine( engine ),cipherFolder( s )
 		{
 		}
 		Engine( const engines::engine& engine,
@@ -58,10 +59,13 @@ namespace siritask
 		const engines::engine& engine ;
 		QString configFileName ;
 		QString configFilePath ;
+		QString cipherFolder ;
 	} ;
 
+
 	siritask::Engine mountEngine( const QString& cipherFolder,
-				      const QString& configFilePath ) ;
+				      const QString& configFilePath,
+				      const QString& engineName = QString() ) ;
 
 	bool deleteMountFolder( const QString& ) ;
 
@@ -70,7 +74,9 @@ namespace siritask
 				     const QString& fileSystem,
 				     int numberOfAttempts = 5 ) ;
 
-	engines::engine::cmdStatus encryptedFolderMount( const engines::engine::options&,bool = false ) ;
+	engines::engine::cmdStatus encryptedFolderMount( const engines::engine::options&,
+							 bool = false,
+							 const QString& = QString() ) ;
 	engines::engine::cmdStatus encryptedFolderCreate( const engines::engine::options& ) ;
 }
 
