@@ -136,6 +136,11 @@ bool utility::platformIsWindows()
 
 #endif
 
+bool utility::platformIsNOTWindows()
+{
+	return !utility::platformIsWindows() ;
+}
+
 static QByteArray _cookie ;
 static QString _polkit_socket_path ;
 
@@ -271,7 +276,7 @@ void utility::Task::execute( const QString& exe,int waitTime,
 
 		s.write( [ & ]()->QByteArray{
 
-			sirikali::json json ;
+			SirikaliJson json ;
 
 			json[ "cookie" ]   = _cookie ;
 			json[ "password" ] = password ;
@@ -285,7 +290,7 @@ void utility::Task::execute( const QString& exe,int waitTime,
 		s.waitForReadyRead() ;
 
 		try{
-			sirikali::json json( s.readAll(),sirikali::json::type::CONTENTS ) ;
+			SirikaliJson json( s.readAll(),SirikaliJson::type::CONTENTS ) ;
 
 			m_finished   = json.getBool( "finished" ) ;
 			m_exitCode   = json.getInterger( "exitCode" ) ;
@@ -445,9 +450,14 @@ bool utility::enablePolkit()
 
 void utility::initGlobals()
 {
+	settings::instance().scaleGUI() ;
+
 	favorites::instance().updateFavorites() ;
+
 	utility::setGUIThread() ;
+
 #ifdef Q_OS_LINUX
+
 	auto uid = getuid() ;
 
 	QString a = "/tmp/SiriKali-" + QString::number( uid ) ;
@@ -493,7 +503,7 @@ void utility::quitHelper()
 
 			s.write( [ & ]()->QByteArray{
 
-				sirikali::json json ;
+				SirikaliJson json ;
 
 				json[ "cookie" ]   = _cookie ;
 				json[ "password" ] = "" ;
@@ -531,7 +541,7 @@ void utility::openPath( const QString& path,const QString& opener,
 
 		openPath( path,opener ).then( [ title,msg,obj ]( bool failed ){
 
-			if( !utility::platformIsWindows() ){
+			if( utility::platformIsNOTWindows() ){
 
 				if( failed && obj ){
 
@@ -546,7 +556,7 @@ void utility::openPath( const QString& path,const QString& opener,
 {
 	return ::Task::run( [ = ](){
 
-		Q_UNUSED( q ) ;
+		Q_UNUSED( q )
 
 		utility::fsInfo s ;
 
@@ -796,7 +806,7 @@ QString utility::cmdArgumentValue( const QStringList& l,const QString& arg,const
 
 QString utility::getVolumeID( const QString& id,bool expand )
 {
-	Q_UNUSED( expand ) ;
+	Q_UNUSED( expand )
 	return id ;
 }
 

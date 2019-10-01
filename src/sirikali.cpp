@@ -95,7 +95,7 @@ std::function< void( systemSignalHandler::signal ) > sirikali::getEmergencyShutD
 {
 	return [ this ]( systemSignalHandler::signal s ){
 
-		Q_UNUSED( s ) ;
+		Q_UNUSED( s )
 
 		this->emergencyShutDown() ;
 	} ;
@@ -206,7 +206,7 @@ void sirikali::setUpApp( const QString& volume )
 
 	connect( m_ui->tableWidget,&QTableWidget::customContextMenuRequested,[ this ]( QPoint s ){
 
-		Q_UNUSED( s ) ;
+		Q_UNUSED( s )
 
 		auto item = m_ui->tableWidget->currentItem() ;
 
@@ -341,6 +341,8 @@ void sirikali::setUpApp( const QString& volume )
 
 		this->runIntervalCustomCommand( e ) ;
 	}
+
+	this->updateFavoritesInContextMenu() ;
 }
 
 void sirikali::showTrayIconWhenReady()
@@ -426,10 +428,11 @@ void sirikali::setUpAppMenu()
 		return e ;
 	} ;
 
-#ifndef Q_OS_WIN
-	m->addAction( _addAction( false,false,tr( "Check For Updates" ),"Check For Updates",
-				  SLOT( updateCheck() ) ) ) ;
-#endif
+	if( utility::platformIsNOTWindows() ){
+
+		m->addAction( _addAction( false,false,tr( "Check For Updates" ),"Check For Updates",
+					  SLOT( updateCheck() ) ) ) ;
+	}
 	m->addAction( _addAction( false,false,tr( "Unmount All" ),
 				  "Unmount All",SLOT( unMountAll() ) ) ) ;
 
@@ -454,9 +457,14 @@ void sirikali::setUpAppMenu()
 
 	this->showFavorites() ;
 
-	m_ui->pbmenu->setMenu( m ) ;
+	m_main_menu = m ;
 
-	m_trayIcon.setContextMenu( m ) ;
+	m_ui->pbmenu->setMenu( m_main_menu ) ;
+
+	if( !settings::instance().showFavoritesInContextMenu() ){
+
+		m_trayIcon.setContextMenu( m_main_menu ) ;
+	}
 
 	connect( &m_trayIcon,SIGNAL( activated( QSystemTrayIcon::ActivationReason ) ),
 		 this,SLOT( slotTrayClicked( QSystemTrayIcon::ActivationReason ) ) ) ;
@@ -515,7 +523,10 @@ void sirikali::favoriteClicked( QAction * ac )
 
 	if( e == "Manage Favorites" ){
 
-		favorites2::instance( this ) ;
+		favorites2::instance( this,favorites::type::others,[ this ](){
+
+			this->updateFavoritesInContextMenu() ;
+		} ) ;
 	}else{
 		if( e == "Mount All" ){
 
@@ -560,6 +571,8 @@ void sirikali::favoriteClicked( QAction * ac )
 			}
 		}
 	}
+
+	this->updateFavoritesInContextMenu() ;
 }
 
 void sirikali::showFavorites()
@@ -667,7 +680,7 @@ void sirikali::start( const QStringList& l )
 
 		auto s = utility::socketPath() ;
 
-		if( !utility::platformIsWindows() ){
+		if( utility::platformIsNOTWindows() ){
 
 			utility::createFolder( s.folderPath ) ;
 
@@ -1144,6 +1157,8 @@ void sirikali::showContextMenu( QTableWidgetItem * item,bool itemClicked )
 
 	_addAction( tr( "Properties" ),SLOT( volumeProperties() ) ) ;
 
+	_addAction( tr( "Add To Favorites" ),SLOT( addToFavorites() ) ) ;
+
 	m.addSeparator() ;
 
 	m.addAction( tr( "Close Menu" ) ) ;
@@ -1160,6 +1175,22 @@ void sirikali::showContextMenu( QTableWidgetItem * item,bool itemClicked )
 		p.setX( x ) ;
 		p.setY( y ) ;
 		m.exec( p ) ;
+	}
+}
+
+void sirikali::addToFavorites()
+{
+	auto table = m_ui->tableWidget ;
+
+	auto cp = tablewidget::rowEntries( table,table->currentRow() ) ;
+
+	if( cp.size() > 0 ){
+
+		favorites2::instance( this,favorites::type::others,[ this ](){
+
+			this->updateFavoritesInContextMenu() ;
+
+		},cp.first() ) ;
 	}
 }
 
@@ -1348,7 +1379,10 @@ void sirikali::createVolume( QAction * ac )
 
 		if( s == "Sshfs" ){
 
-			favorites2::instance( this,favorites::type::sshfs ) ;
+			favorites2::instance( this,favorites::type::sshfs,[ this ](){
+
+				this->updateFavoritesInContextMenu() ;
+			} ) ;
 		}else{
 			this->mount( volumeInfo(),s ) ;
 		}
@@ -1417,6 +1451,142 @@ QFont sirikali::getSystemVolumeFont()
 	f.setItalic( !f.italic() ) ;
 	f.setBold( !f.bold() ) ;
 	return f ;
+}
+
+void sirikali::updateFavoritesInContextMenu()
+{
+	class mountedVolumes{
+	public:
+		mountedVolumes( QTableWidget * table ) :
+			m_cipherPath( tablewidget::columnEntries( table,0 ) ),
+			m_mountPath( tablewidget::columnEntries( table,1 ) )
+		{
+		}
+		int row( const QString& e )
+		{
+			auto a = utility::split( e,'\n' ) ;
+
+			if( a.size() == 1 ){
+
+				const auto& m = a.at( 0 ) ;
+
+				for( int i = 0 ; i < m_cipherPath.size() ; i++ ){
+
+					if( m == m_cipherPath.at( i ) ){
+
+						return i ;
+					}
+				}
+			}else{
+				const auto& x = a.at( 0 ) ;
+				const auto& y = a.at( 1 ) ;
+
+				for( int i = 0 ; i < m_cipherPath.size() ; i++ ){
+
+					if( x == m_cipherPath.at( i ) && y == m_mountPath.at( i ) ){
+
+						return i ;
+					}
+				}
+			}
+
+			return -1 ;
+		}
+
+		bool mounted( const QString& e )
+		{
+			auto s = this->row( e ) ;
+
+			if( s == -1 ){
+
+				return false ;
+			}else{
+				m_cipherPath.removeAt( s ) ;
+				m_mountPath.removeAt( s ) ;
+
+				return true ;
+			}
+		}
+
+		void addMounted( QMenu * m,bool e )
+		{
+			for( int i = 0 ; i < m_cipherPath.size() ; i++ ){
+
+				auto ac = new QAction( m ) ;
+
+				QString n ;
+
+				if( e ){
+
+					n = m_cipherPath.at( i ) + "\n" + m_mountPath.at( i ) ;
+				}else{
+					n = m_cipherPath.at( i ) ;
+				}
+
+				ac->setText( n ) ;
+				ac->setObjectName( n ) ;
+				ac->setCheckable( true ) ;
+				ac->setChecked( true ) ;
+
+				m->addAction( ac ) ;
+			}
+		}
+	private:
+		QStringList m_cipherPath ;
+		QStringList m_mountPath ;
+	};
+
+	if( !settings::instance().showFavoritesInContextMenu() ){
+
+		return ;
+	}
+
+	if( !m_context_menu ){
+
+		m_context_menu = new QMenu( this ) ;
+
+		connect( m_context_menu,&QMenu::triggered,[ this ]( QAction * ac ){
+
+			if( ac->isCheckable() ){
+
+				if( ac->isChecked() ){
+
+					this->favoriteClicked( ac ) ;
+				}else{
+					auto b = mountedVolumes( m_ui->tableWidget ).row( ac->objectName() ) ;
+
+					if( b != -1 ){
+
+						tablewidget::selectRow( m_ui->tableWidget,b ) ;
+						this->pbUmount() ;
+					}
+				}
+			}else{
+				this->favoriteClicked( ac ) ;
+			}
+		} ) ;
+
+		m_trayIcon.setContextMenu( m_context_menu ) ;
+	}
+
+	auto e = settings::instance().readFavorites( m_context_menu ) ;
+
+	auto s = m_context_menu->actions() ;
+
+	mountedVolumes m( m_ui->tableWidget ) ;
+
+	for( int i = 2 ; i < s.size() ; i++ ){
+
+		auto it = s.at( i ) ;
+		it->setCheckable( true ) ;
+		it->setChecked( m.mounted( it->objectName() ) ) ;
+	}
+
+	m.addMounted( m_context_menu,e ) ;
+
+	m_context_menu->addSeparator() ;
+
+	m_context_menu->addActions( m_main_menu->actions() ) ;
 }
 
 void sirikali::runIntervalCustomCommand( const QString& cmd )
@@ -1626,6 +1796,8 @@ void sirikali::pbUpdate()
 	}else{
 		this->updateVolumeList( mountinfo::unlockedVolumes().await() ) ;
 	}
+
+	this->updateFavoritesInContextMenu() ;
 }
 
 void sirikali::updateVolumeList( const std::vector< volumeInfo >& r )

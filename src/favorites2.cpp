@@ -27,11 +27,16 @@
 
 #include <QFileDialog>
 
-favorites2::favorites2( QWidget * parent,favorites::type type ) :
+favorites2::favorites2( QWidget * parent,
+			favorites::type type,
+			std::function< void() > function,
+			const QString& cp ) :
 	QDialog ( parent) ,
 	m_ui( new Ui::favorites2 ),
 	m_type( type ),
-	m_settings( settings::instance() )
+	m_settings( settings::instance() ),
+	m_function( std::move( function ) ),
+	m_cipherPath( cp )
 {
 	m_ui->setupUi( this ) ;
 
@@ -193,7 +198,7 @@ favorites2::favorites2( QWidget * parent,favorites::type type ) :
 
 	m_ui->cbAutoMount->setChecked( false ) ;
 
-	m_ui->cbReadOnlyMode->setEnabled( !utility::platformIsWindows() ) ;
+	m_ui->cbReadOnlyMode->setEnabled( utility::platformIsNOTWindows() ) ;
 
 	this->checkFavoritesConsistency() ;
 
@@ -239,6 +244,12 @@ void favorites2::tabChanged( int index )
 			m_ui->pbEdit->setFocus() ;
 		}else{
 			this->clearEditVariables() ;
+
+			if( !m_cipherPath.isEmpty() ){
+
+				m_ui->lineEditEncryptedFolderPath->setText( m_cipherPath ) ;
+				m_cipherPath.clear() ;
+			}
 
 			m_ui->pbEdit->setEnabled( false ) ;
 			m_ui->pbAdd->setEnabled( true ) ;
@@ -600,8 +611,8 @@ void favorites2::currentItemChanged( QTableWidgetItem * current,QTableWidgetItem
 
 void favorites2::itemClicked( QTableWidgetItem * current,bool clicked )
 {
-	Q_UNUSED( current ) ;
-	Q_UNUSED( clicked ) ;
+	Q_UNUSED( current )
+	Q_UNUSED( clicked )
 }
 
 void favorites2::itemClicked( QTableWidgetItem * current )
@@ -626,7 +637,7 @@ void favorites2::devicePathTextChange( QString txt )
 
 			m_ui->lineEditMountPath->setText( txt ) ;
 		}else{
-			auto m = settings::instance().mountPath( s ) ;
+			auto m = m_settings.mountPath( s ) ;
 			m_ui->lineEditMountPath->setText( m ) ;
 		}
 	}
@@ -655,6 +666,7 @@ void favorites2::closeEvent( QCloseEvent * e )
 void favorites2::HideUI()
 {
 	this->hide() ;
+	m_function() ;
 	this->deleteLater() ;
 }
 
@@ -732,9 +744,9 @@ void favorites2::ShowUI( favorites::type type )
 
 	if( utility::platformIsWindows() ){
 
-		m_ui->lineEditMountPath->setText( "Z:" ) ;
+		m_ui->lineEditMountPath->setText( utility::freeWindowsDriveLetter() ) ;
 	}else{
-		m_ui->lineEditMountPath->clear() ;
+		m_ui->lineEditMountPath->setText( m_settings.mountPath() ) ;
 	}
 
 	if( m_type == favorites::type::sshfs ){
@@ -746,12 +758,16 @@ void favorites2::ShowUI( favorites::type type )
 		m_ui->labelCofigFilePath->setText( tr( "SSH_AUTH_SOCK Socket Path (Optional)" ) ) ;
 		m_ui->labelIdleTimeOut->setText( tr( "IdentityFile Path (Optional)" ) ) ;
 		m_ui->lineEditVolumeType->setText( "Sshfs" ) ;
-
 		m_ui->pbEdit->setEnabled( false ) ;
 	}else{
 		m_ui->pbIdentityFile->setVisible( false ) ;
 		m_ui->tabWidget->setCurrentIndex( 0 ) ;
 		m_ui->tabWidget_2->setCurrentIndex( 0 ) ;
+	}
+
+	if( !m_cipherPath.isEmpty() ){
+
+		m_ui->tabWidget->setCurrentIndex( 1 ) ;
 	}
 
 	m_ui->tableWidget->setFocus() ;

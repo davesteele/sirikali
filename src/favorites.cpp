@@ -20,9 +20,7 @@
 #include "favorites.h"
 
 #include "utility.h"
-#include "json.h"
 #include "settings.h"
-#include "json_parser.hpp"
 
 #include <QDir>
 #include <QFile>
@@ -127,7 +125,7 @@ static void _move_favorites_to_new_system( const QStringList& m )
 static void _add_entries( std::vector< favorites::entry >& e,const QString& path )
 {
 	try {
-		sirikali::json json( path,sirikali::json::type::PATH ) ;
+		SirikaliJson json( path,SirikaliJson::type::PATH ) ;
 
 		favorites::entry m ;
 
@@ -143,23 +141,12 @@ static void _add_entries( std::vector< favorites::entry >& e,const QString& path
 		m.reverseMode          = json.getBool( "reverseMode" ) ;
 		m.volumeNeedNoPassword = json.getBool( "volumeNeedNoPassword" ) ;
 
-		auto s = json.getString( "mountReadOnly" ) ;
-
-		if( !s.isEmpty() ){
-
-			m.readOnlyMode = favorites::triState( s == "true" ? true : false ) ;
-		}
-
-		s = json.getString( "autoMountVolume" ) ;
-
-		if( !s.isEmpty() ){
-
-			m.autoMount = favorites::triState( s == "true" ? true : false ) ;
-		}
+		favorites::triState::readTriState( json,m.readOnlyMode,"mountReadOnly" ) ;
+		favorites::triState::readTriState( json,m.autoMount,"autoMountVolume" ) ;
 
 		e.emplace_back( std::move( m ) ) ;
 
-	}catch( std::exception& e ){
+	}catch( const SirikaliJson::exception& e ){
 
 		utility::debug::cout() << e.what() ;
 		utility::debug::cout() << "Failed to parse file for reading: " + path ;
@@ -177,7 +164,7 @@ std::vector<favorites::entry> favorites::readFavorites() const
 
 	auto a = m.value() ;
 
-	const auto s = QDir( a ).entryList( QDir::Filter::Files ) ;
+	const auto s = QDir( a ).entryList( QDir::Filter::Files | QDir::Filter::Hidden ) ;
 
 	std::vector<favorites::entry> e ;
 
@@ -239,7 +226,7 @@ favorites::error favorites::add( const favorites::entry& e )
 		return error::FAILED_TO_CREATE_ENTRY ;
 	}
 
-	sirikali::json json ;
+	SirikaliJson json ;
 
 	json[ "volumePath" ]           = e.volumePath ;
 	json[ "mountPointPath" ]       = e.mountPointPath ;
@@ -253,29 +240,8 @@ favorites::error favorites::add( const favorites::entry& e )
 	json[ "reverseMode" ]          = e.reverseMode ;
 	json[ "volumeNeedNoPassword" ] = e.volumeNeedNoPassword ;
 
-	if( e.readOnlyMode.defined() ){
-
-		if( e.readOnlyMode.True() ){
-
-			json[ "mountReadOnly" ] = "true" ;
-		}else{
-			json[ "mountReadOnly" ] = "false" ;
-		}
-	}else{
-		json[ "mountReadOnly" ] = "" ;
-	}
-
-	if( e.autoMount.defined() ){
-
-		if( e.autoMount.True() ){
-
-			json[ "autoMountVolume" ] = "true" ;
-		}else{
-			json[ "autoMountVolume" ] = "false" ;
-		}
-	}else{
-		json[ "autoMountVolume" ] = "" ;
-	}
+	favorites::triState::writeTriState( json,e.readOnlyMode,"mountReadOnly" ) ;
+	favorites::triState::writeTriState( json,e.autoMount,"autoMountVolume" ) ;
 
 	auto a = _create_path( m.value(),e ) ;
 
