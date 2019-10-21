@@ -32,6 +32,9 @@ static engines::engine::BaseOptions _setOptions()
 	s.passwordFormat        = "%{password}\n%{password}\n%{password}\n%{password}\n%{password}\n%{password}\n%{password}\n%{password}\n%{password}\n%{password}" ;
 
 	s.supportsMountPathsOnWindows = true ;
+	s.autorefreshOnMountUnMount   = true ;
+	s.backendRequireMountPath     = true ;
+	s.requiresPolkit        = false ;
 	s.customBackend         = false ;
 	s.requiresAPassword     = false ;
 	s.hasConfigFile         = false ;
@@ -50,8 +53,30 @@ static engines::engine::BaseOptions _setOptions()
 	return s ;
 }
 
-sshfs::sshfs() : engines::engine( _setOptions() )
+sshfs::sshfs() :
+	engines::engine( _setOptions() ),
+	m_environment( engines::engine::getProcessEnvironment() )
 {
+}
+
+engines::engine::status sshfs::passMinimumVersion() const
+{
+	if( utility::platformIsWindows() ){
+
+		auto m = utility::unwrap( utility::backendIsLessThan( "sshfs","3.4.0" ) ) ;
+
+		if( m && m.value() ){
+
+			return engines::engine::status::sshfsTooOld ;
+		}
+	}
+
+	return engines::engine::status::success ;
+}
+
+const QProcessEnvironment& sshfs::getProcessEnvironment() const
+{
+	return m_environment ;
 }
 
 engines::engine::args sshfs::command( const QString& password,
@@ -91,23 +116,21 @@ engines::engine::args sshfs::command( const QString& password,
 		}
 	}
 
-	auto& env = utility::globalEnvironment::instance() ;
-
 	if( fuseOptions.contains( "IdentityAgent" ) ){
 
 		auto m = "IdentityAgent=" ;
 
 		auto n = fuseOptions.extractStartsWith( m ).replace( m,"" ) ;
 
-		env.insert( "SSH_AUTH_SOCK",n ) ;
+		m_environment.insert( "SSH_AUTH_SOCK",n ) ;
 	}else{
 		auto m = qgetenv( "SSH_AUTH_SOCK" ) ;
 
 		if( m.isEmpty() ){
 
-			env.remove( "SSH_AUTH_SOCK" ) ;
+			m_environment.remove( "SSH_AUTH_SOCK" ) ;
 		}else{
-			env.insert( "SSH_AUTH_SOCK",m ) ;
+			m_environment.insert( "SSH_AUTH_SOCK",m ) ;
 		}
 	}
 
