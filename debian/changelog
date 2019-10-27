@@ -1,8 +1,8 @@
-sirikali (1.4.1-1) UNRELEASED; urgency=medium
+sirikali (1.4.1-1) unstable; urgency=medium
 
   * New upstream version.
 
- -- David Steele <steele@debian.org>  Mon, 21 Oct 2019 18:03:29 -0400
+ -- David Steele <steele@debian.org>  Sat, 26 Oct 2019 22:47:39 -0400
 
 sirikali (1.4.0-1) unstable; urgency=medium
 
