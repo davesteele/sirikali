@@ -1,3 +1,9 @@
+sirikali (1.4.1-2) unstable; urgency=medium
+
+  * Fix build for duplicate man page installs.Z
+
+ -- David Steele <steele@debian.org>  Wed, 30 Oct 2019 21:15:40 -0400
+
 sirikali (1.4.1-1) unstable; urgency=medium
 
   * New upstream version.

@@ -1,9 +1,9 @@
-sirikali (1.4.1-1) UNRELEASED; urgency=medium
+sirikali (1.4.1-2) unstable; urgency=medium
 
         Be aware that any running sirikali sessions will be killed before the
         upgrade. Abort the upgrade and clean up if necessary.
 
- -- David Steele <steele@debian.org>  Sat, 26 Oct 2019 22:46:49 -0400
+ -- David Steele <steele@debian.org>  Wed, 30 Oct 2019 21:15:58 -0400
 
 sirikali (1.4.0-1) unstable; urgency=medium
 
