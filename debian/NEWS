@@ -1,8 +1,11 @@
-sirikali (1.4.2-1) UNRELEASED; urgency=medium
+sirikali (1.4.2-1) unstable; urgency=medium
 
         Sirikali now assume passwords are utf8 encoded instead of
         latin-1. This is a breaking change for those who were using
         a password that was not a valid latin-1 password.
+        .
+        Be aware that any running sirikali sessions will be killed before the
+        upgrade. Abort the upgrade and clean up if necessary.
 
  -- David Steele <steele@debian.org>  Wed, 25 Dec 2019 00:12:09 -0500
 

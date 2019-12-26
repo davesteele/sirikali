@@ -1,10 +1,10 @@
-sirikali (1.4.2-1) UNRELEASED; urgency=medium
+sirikali (1.4.2-1) unstable; urgency=medium
 
   * New upstream version.
     - There is a breaking change for passwords which were not valid
       latin-1 strings.
 
- -- David Steele <steele@debian.org>  Wed, 25 Dec 2019 00:11:20 -0500
+ -- David Steele <steele@debian.org>  Wed, 25 Dec 2019 22:15:47 -0500
 
 sirikali (1.4.1-2) unstable; urgency=medium
 
