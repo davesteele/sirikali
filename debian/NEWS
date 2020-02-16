@@ -1,3 +1,10 @@
+sirikali (1.4.2-2) unstable; urgency=medium
+
+        Be aware that any running sirikali sessions will be killed before the
+        upgrade. Abort the upgrade and clean up if necessary.
+
+ -- David Steele <steele@debian.org>  Sat, 15 Feb 2020 19:42:08 -0500
+
 sirikali (1.4.2-1) unstable; urgency=medium
 
         Sirikali now assume passwords are utf8 encoded instead of
