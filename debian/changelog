@@ -1,3 +1,9 @@
+sirikali (1.4.4-1) UNRELEASED; urgency=medium
+
+  * Start v1.4.4
+
+ -- David Steele <steele@debian.org>  Fri, 05 Jun 2020 14:24:00 -0400
+
 sirikali (1.4.3-1) unstable; urgency=medium
 
   * New upstream version.
