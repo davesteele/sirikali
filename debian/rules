@@ -4,7 +4,7 @@ export DH_OPTIONS
 
 PKD = $(word 1,$(abspath $(dir $(MAKEFILE_LIST))))
 VER = $(shell (dpkg-parsechangelog -l$(PKD)/changelog | grep Version | sed 's/Version..//' | sed 's/-.\+//'))
-PRODUCT_VER = $(shell (grep version changelog | tail -1 |  sed 's/version \([0-9.]\+\).\+/\1/'))
+PRODUCT_VER = $(shell (grep -e "^\s*version" changelog | tail -1 |  sed 's/version \([0-9.]\+\).\+/\1/'))
 
 DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
 
