@@ -20,16 +20,9 @@
 #ifndef UTILITY_TWO_H
 #define UTILITY_TWO_H
 
-#include <QStringList>
-#include <QDir>
-#include <QtGlobal>
-
 #include <functional>
 #include <memory>
 #include <type_traits>
-
-class QByteArray ;
-class QTranslator ;
 
 namespace utility2
 {
@@ -98,6 +91,12 @@ namespace utility2
 				   std::forward< Deleter >( deleter ),type ) ;
 	}
 
+	/*
+	 * Example use cases of this method
+	 *
+	 * auto exe  = utility2::unique_qptr< QProcess >() ;
+	 * auto exe1 = utility2::unique_qptr< QProcess >( "ls" ) ;
+	 */
 	template< typename Type,typename ... Arguments >
 	auto unique_qptr( Arguments&& ... args )
 	{
@@ -141,6 +140,87 @@ namespace utility2
 
 		utility2::detail::stringListToStrings( s,type_t( 0 ),s.size(),t ... ) ;
 	}
+}
+
+namespace utility2
+{
+	class raii
+	{
+	public:
+		raii( std::function< void() > s ) : m_function( std::move( s ) )
+		{
+		}
+		~raii()
+		{
+			if( m_run ){
+
+				m_function() ;
+			}
+		}
+		void cancel()
+		{
+			m_run = false ;
+		}
+	private:
+		bool m_run = true ;
+		std::function< void() > m_function ;
+	};
+
+	template< typename T >
+	class result
+	{
+	public:
+		result()
+		{
+		}
+		result( T e ) : m_valid( true ),m_value( std::move( e ) )
+		{
+		}
+		T * operator->()
+		{
+			return &m_value ;
+		}
+		const T * operator->() const
+		{
+			return &m_value ;
+		}
+		T& operator*()
+		{
+			return m_value ;
+		}
+		const T& operator*() const
+		{
+			return m_value ;
+		}
+		operator bool()
+		{
+			return m_valid ;
+		}
+		bool has_value() const
+		{
+			return m_valid ;
+		}
+		T& value()
+		{
+			return m_value ;
+		}
+		const T& value() const
+		{
+			return m_value ;
+		}
+		T&& RValue()
+		{
+			return std::move( m_value ) ;
+		}
+		void set( T value )
+		{
+			m_value = std::move( value ) ;
+			m_valid = true ;
+		}
+	private:
+		bool m_valid = false ;
+		T m_value ;
+	} ;
 }
 
 #endif

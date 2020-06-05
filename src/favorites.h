@@ -113,6 +113,7 @@ public:
 		QString volumePath ;
 		QString mountPointPath ;
 		QString configFilePath ;
+		QString keyFile ;
 		QString idleTimeOut ;
 		QString mountOptions ;
 		QString preMountCommand ;
@@ -144,7 +145,10 @@ public:
 
 	std::vector< favorites::entry > readFavorites() const ;
 
-	utility::result< favorites::entry > readFavorite( const QString&,const QString& = QString() ) const ;
+	utility2::result< favorites::entry > readFavorite( const QString&,const QString& = QString() ) const ;
+
+	utility2::result< favorites::entry > readFavoriteByPath( const QString& ) const ;
+
 
 	void updateFavorites() ;
 };
