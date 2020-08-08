@@ -1,9 +1,11 @@
 #!/usr/bin/make -f
 
+include /usr/share/dpkg/pkg-info.mk
+
 export DH_OPTIONS
 
 PKD = $(word 1,$(abspath $(dir $(MAKEFILE_LIST))))
-VER = $(shell (dpkg-parsechangelog -l$(PKD)/changelog | grep Version | sed 's/Version..//' | sed 's/-.\+//'))
+VER = $(shell (echo $(DEB_VERSION) | sed 's/-.\+//'))
 PRODUCT_VER = $(shell (grep -e "^\s*version" changelog | tail -1 |  sed 's/version \([0-9.]\+\).\+/\1/'))
 
 DEB_HOST_MULTIARCH ?= $(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
