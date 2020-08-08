@@ -41,6 +41,7 @@
 #include "debugwindow.h"
 #include "settings.h"
 #include "systemsignalhandler.h"
+#include "keydialog.h"
 
 #include <vector>
 
@@ -56,7 +57,7 @@ class sirikali ;
 class sirikali : public QWidget
 {
 	Q_OBJECT
-public:
+public:	
 	sirikali( const QStringList& ) ;
 	int start( QApplication& ) ;
 	~sirikali() ;
@@ -66,7 +67,6 @@ private slots:
 	void showDebugWindow( void ) ;
 	void configurationOptions( void ) ;
 	void FAQ( void ) ;
-	void showTrayIconWhenReady( void ) ;
 	void polkitFailedWarning( void ) ;
 	void hideWindow( void ) ;
 	void setUpApp( const QString& ) ;
@@ -77,7 +77,7 @@ private slots:
 	void unlockVolume( const QStringList& ) ;
 	void closeApplication( int = 0,const QString& = QString() ) ;
 	void unlockVolume( bool ) ;
-	void startGUI( const std::vector< volumeInfo >& ) ;
+	void startGUI( const QString& ) ;
 	void autoMount( const QString& ) ;
 	void defaultButton( void ) ;
 	void itemClicked( QTableWidgetItem * ) ;
@@ -100,6 +100,7 @@ private slots:
 	void removeEntryFromTable( QString ) ;
 	void showFavorites( void ) ;
 	void favoriteClicked( QAction * ) ;
+	void favoriteClicked() ;
 	void openMountPointPath( const QString& ) ;
 	void licenseInfo( void ) ;
 	void updateCheck( void ) ;
@@ -109,7 +110,13 @@ private:
 
 	void showTrayIcon() ;
 
-	void mountMultipleVolumes( favorites::volumeList ) ;
+	void mountMultipleVolumes( keyDialog::volumeList ) ;
+
+	void autoMount( keyDialog::volumeList&,
+			const keyDialog::entry&,
+			const QByteArray&,
+			bool,
+			bool ) ;
 
 	QString resolveFavoriteMountPoint( const QString& ) ;
 
@@ -130,9 +137,12 @@ private:
 	void closeEvent( QCloseEvent * e ) ;
 	void setUpFont( void ) ;
 	void setUpShortCuts( void ) ;
+	void showMainWindow( void ) ;
 	void raiseWindow( const QString& = QString() ) ;
 	void autoUnlockVolumes( const std::vector< volumeInfo >& ) ;	
-	favorites::volumeList autoUnlockVolumes( favorites::volumeList,bool = false ) ;
+	keyDialog::volumeList autoUnlockVolumes( favorites::volumeList,
+						 bool autoOpenFolderOnMount = false,
+						 bool skipUnknown = false ) ;
 
 	struct mountedEntry{
 		const QString& cipherPath ;
@@ -145,6 +155,8 @@ private:
 	engines::engine::cmdStatus unMountVolume( const sirikali::mountedEntry& ) ;
 
 	Ui::sirikali * m_ui = nullptr ;
+
+	debugWindow m_debugWindow ;
 
 	secrets m_secrets ;
 
@@ -181,8 +193,6 @@ private:
 	checkUpdates m_checkUpdates ;
 
 	configOptions m_configOptions ;
-
-	debugWindow m_debugWindow ;
 
 	systemSignalHandler m_signalHandler ;
 

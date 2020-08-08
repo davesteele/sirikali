@@ -48,17 +48,10 @@ Task::future< bool >& favorites2::addKey( secrets::wallet& wallet,
 
 		if( wallet->addKey( id,key ) ){
 
-			if( wallet->addKey( id + COMMENT,comment ) ){
-
-				return true ;
-			}else{
-				utility::debug() << "Failed To Add Key To Wallet" ;
-
-				wallet->deleteKey( id ) ;
-
-				return false ;
-			}
+			return true ;
 		}else{
+			utility::debug() << "Failed To Add Key To Wallet" ;
+
 			return false ;
 		}
 	} ) ;
@@ -67,14 +60,14 @@ Task::future< bool >& favorites2::addKey( secrets::wallet& wallet,
 favorites2::favorites2( QWidget * parent,
 			secrets& wallet,
 			std::function< void() > function,
-			const QString& vt,
+			const engines::engine& engine,
 			const QString& cp ) :
 	QDialog ( parent ),
 	m_ui( new Ui::favorites2 ),
 	m_secrets( wallet ),
 	m_settings( settings::instance() ),
 	m_function( std::move( function ) ),
-	m_volumeType( vt.toLower() ),
+	m_engine( engine ),
 	m_cipherPath( cp )
 {
 	m_ui->setupUi( this ) ;
@@ -286,11 +279,11 @@ favorites2::favorites2( QWidget * parent,
 	m_ui->rbKWallet->setEnabled( LXQt::Wallet::backEndIsSupported( bk::kwallet ) ) ;
 	m_ui->rbLibSecret->setEnabled( LXQt::Wallet::backEndIsSupported( bk::libsecret ) ) ;
 	m_ui->rbMacOSKeyChain->setEnabled( LXQt::Wallet::backEndIsSupported( bk::osxkeychain ) ) ;
-	m_ui->rbWindowsDPAPI->setEnabled( LXQt::Wallet::backEndIsSupported( SiriKali::Windows::windowsWalletBackend() ) ) ;
+	m_ui->rbWindowsDPAPI->setEnabled( LXQt::Wallet::backEndIsSupported( bk::windows_dpapi ) ) ;
 
 	auto walletBk = m_settings.autoMountBackEnd() ;
 
-	if( walletBk == SiriKali::Windows::windowsWalletBackend() ){
+	if( walletBk == bk::windows_dpapi ){
 
 		m_ui->label_22->setEnabled( true ) ;
 		m_ui->pbChangeWalletPassword->setEnabled( true ) ;
@@ -377,9 +370,8 @@ favorites2::favorites2( QWidget * parent,
 
 			m_ui->label_22->setEnabled( true ) ;
 			m_ui->pbChangeWalletPassword->setEnabled( true ) ;
-			auto bk = SiriKali::Windows::windowsWalletBackend() ;
-			this->walletBkChanged( bk ) ;
-			m_settings.autoMountBackEnd( bk ) ;
+			this->walletBkChanged( bk::windows_dpapi ) ;
+			m_settings.autoMountBackEnd( bk::windows_dpapi ) ;
 		}
 	} ) ;
 
@@ -496,9 +488,11 @@ favorites2::favorites2( QWidget * parent,
 
 			m_secrets.changeInternalWalletPassword( a,b,[ this ]( bool s ){
 
-				Q_UNUSED( s )
+				if( s ){
 
-				this->walletBkChanged( LXQt::Wallet::BackEnd::internal ) ;
+					this->walletBkChanged( LXQt::Wallet::BackEnd::internal ) ;
+				}
+
 				this->show() ;
 			} ) ;
 
@@ -510,7 +504,7 @@ favorites2::favorites2( QWidget * parent,
 
 				if( s ){
 
-					this->walletBkChanged( SiriKali::Windows::windowsWalletBackend() ) ;
+					this->walletBkChanged( LXQt::Wallet::BackEnd::windows_dpapi ) ;
 				}
 
 				this->show() ;
@@ -725,6 +719,20 @@ void favorites2::showContextMenu( QTableWidgetItem * item,bool itemClicked )
 	}
 }
 
+template< typename Function >
+static auto _hide_ui( Function hide,LXQt::Wallet::BackEnd bk )
+{
+	return [ hide = std::move( hide ),bk ](){
+
+		using w = LXQt::Wallet::BackEnd ;
+
+		if( bk == w::internal || bk == w::windows_dpapi ){
+
+			hide() ;
+		}
+	} ;
+}
+
 void favorites2::walletBkChanged( LXQt::Wallet::BackEnd bk )
 {
 	this->setControlsAvailability( true,true ) ;
@@ -738,7 +746,7 @@ void favorites2::walletBkChanged( LXQt::Wallet::BackEnd bk )
 			tablewidget::addRow( m_ui->tableWidgetWallet,{ it } ) ;
 		}
 
-	},[ this ](){ this->hide() ; },[ this ]( bool opened ){
+	},_hide_ui( [ this ](){ this->hide() ; },bk ),[ this ]( bool opened ){
 
 		if( opened ){
 
@@ -1028,15 +1036,15 @@ void favorites2::updateFavorite( bool edit )
 	auto configPath = m_ui->lineEditConfigFilePath->toPlainText() ;
 	auto idleTimeOUt = m_ui->lineEditIdleTimeOut->toPlainText() ;
 
-	if( m_volumeType == "sshfs" ){
+	if( m_engine.likeSsh() ){
 
 		if( !configPath.isEmpty() ){
 
 			if( mOpts.isEmpty() ){
 
-				mOpts = "IdentityAgent=" + configPath ;
+				mOpts = "IdentityAgent=\"" + configPath + "\"" ;
 			}else{
-				mOpts += ",IdentityAgent=" + configPath ;
+				mOpts += ",IdentityAgent=\"" + configPath + "\"" ;
 			}
 		}
 
@@ -1044,9 +1052,9 @@ void favorites2::updateFavorite( bool edit )
 
 			if( mOpts.isEmpty() ){
 
-				mOpts = "IdentityFile=" + idleTimeOUt ;
+				mOpts = "IdentityFile=\"" + idleTimeOUt + "\"" ;
 			}else{
-				mOpts += ",IdentityFile=" + idleTimeOUt ;
+				mOpts += ",IdentityFile=\"" + idleTimeOUt + "\"" ;
 			}
 		}
 
@@ -1072,17 +1080,18 @@ void favorites2::updateFavorite( bool edit )
 	}() ;
 
 	favorites::entry e ;
-	e.volumePath = dev_path ;
-	e.mountPointPath = path ;
-	e.autoMount = m_ui->cbAutoMount->isChecked() ;
-	e.configFilePath = configPath ;
-	e.idleTimeOut = idleTimeOUt ;
-	e.mountOptions = mOpts ;
+
+	e.volumePath           = dev_path ;
+	e.mountPointPath       = path ;
+	e.autoMount            = m_ui->cbAutoMount->isChecked() ;
+	e.configFilePath       = configPath ;
+	e.idleTimeOut          = idleTimeOUt ;
+	e.mountOptions         = mOpts ;
 	e.volumeNeedNoPassword = m_ui->cbVolumeNoPassword->isChecked() ;
-	e.preMountCommand = m_ui->lineEditPreMount->text() ;
-	e.preUnmountCommand = m_ui->lineEditPreUnMount->text() ;
-	e.postMountCommand = m_ui->lineEditPostMount->text() ;
-	e.postUnmountCommand = m_ui->lineEditPostUnmount->text() ;
+	e.preMountCommand      = m_ui->lineEditPreMount->text() ;
+	e.preUnmountCommand    = m_ui->lineEditPreUnMount->text() ;
+	e.postMountCommand     = m_ui->lineEditPostMount->text() ;
+	e.postUnmountCommand   = m_ui->lineEditPostUnmount->text() ;
 
 	if( edit ){
 
@@ -1294,22 +1303,17 @@ void favorites2::ShowUI()
 		m_ui->lineEditMountPath->setText( m_settings.mountPath() ) ;
 	}
 
-	if( m_volumeType == "sshfs" ){
+	if( m_engine.likeSsh() ){
 
 		m_ui->tabWidget->setCurrentIndex( 1 ) ;
 
-		if( utility::platformIsWindows() ){
-
-			m_ui->lineEditMountOptions->setText( "create_file_umask=0000,create_dir_umask=0000,umask=0000,idmap=user,StrictHostKeyChecking=no,UseNetworkDrive=no" ) ;
-		}else{
-			m_ui->lineEditMountOptions->setText( "idmap=user,StrictHostKeyChecking=no" ) ;
-		}
+		m_ui->lineEditMountOptions->setText( m_engine.sshOptions() ) ;
 
 		m_ui->lineEditEncryptedFolderPath->setText( m_cipherPath ) ;
 		m_ui->labelName ->setText( tr( "Remote Ssh Server Address\n(Example: woof@example.com:/remote/path)" ) ) ;
 		m_ui->labelCofigFilePath->setText( tr( "SSH_AUTH_SOCK Socket Path (Optional)" ) ) ;
 		m_ui->labelIdleTimeOut->setText( tr( "IdentityFile Path (Optional)" ) ) ;
-		m_ui->lineEditVolumeType->setText( "Sshfs" ) ;
+		m_ui->lineEditVolumeType->setText( m_engine.name() ) ;
 		m_ui->pbEdit->setEnabled( false ) ;
 	}else{
 		m_ui->pbIdentityFile->setVisible( false ) ;

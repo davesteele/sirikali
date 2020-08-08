@@ -40,14 +40,14 @@ struct opts{
 
 	bool create ;
 	const engines::engine::args& args ;
-	const engines::engine::cmdArgsList::options& options ;
+	const engines::engine::cmdArgsList& options ;
 	const engines::engine& engine ;
 	const QByteArray& password ;
 } ;
 
 Task::process::result run( const SiriKali::Windows::opts& ) ;
 
-Task::process::result unmount( const QString& unMountCommand,const QString& mountPath ) ;
+Task::process::result unmount( const QStringList& unMountCommand,const QString& mountPath ) ;
 
 QString volumeProperties( const QString& mountPath ) ;
 
@@ -60,8 +60,6 @@ QStringList engineInstalledDirs() ;
 
 QString lastError() ;
 
-LXQt::Wallet::BackEnd windowsWalletBackend() ;
-
 std::pair< bool,QString > driveHasSupportedFileSystem( const QString& path ) ;
 
 bool mountPointTaken( const QString& ) ;
@@ -73,7 +71,7 @@ bool backEndTimedOut( const QString& ) ;
 struct mountOptions
 {
 	mountOptions( const QString& a,const QString& b,const QString& c,
-		      const QString& d,const QString& e ) :
+		      const QString& d,const QStringList& e ) :
 		mode( a ),subtype( b ),cipherFolder( c ),mountPointPath( d ),fuseOptions( e )
 	{
 	}
@@ -81,7 +79,7 @@ struct mountOptions
 	QString subtype ;
 	QString cipherFolder ;
 	QString mountPointPath ;
-	QString fuseOptions ;
+	QStringList fuseOptions ;
 };
 
 std::vector< mountOptions > getMountOptions() ;

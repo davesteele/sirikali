@@ -34,26 +34,41 @@
 #include "win.h"
 #include "engines/options.h"
 
+static QStringList _search_path_0( const QString& e )
+{
+	QStringList s = { e,e + "\\bin\\",e + "\\.bin\\" };
+
+	const auto a = QDir( e ).entryList( QDir::Filter::Dirs | QDir::Filter::NoDotAndDotDot ) ;
+
+	for( const auto& it : a ){
+
+		s.append( e + it + "\\" ) ;
+		s.append( e + it + "\\bin\\" ) ;
+		s.append( e + it + "\\.bin\\" ) ;
+	}
+
+	return s ;
+}
+
 static QStringList _search_path( const QStringList& m )
 {
 	const auto a = QDir::homePath().toLatin1() ;
 
 	if( utility::platformIsWindows() ){
 
-		QStringList s = { QDir().currentPath() + "\\bin\\",
-				  a + "\\bin\\",
-				  a + "\\.bin\\",
-				  settings::instance().windowsExecutableSearchPath() + "\\" } ;
+		auto x = _search_path_0( a  + "\\bin\\" ) ;
+		x += _search_path_0( QDir().currentPath() ) ;
+		x += _search_path_0( settings::instance().windowsExecutableSearchPath() + "\\" ) ;
 
 		for( const auto& it : m ){
 
 			if( !it.isEmpty() ){
 
-				s.append( it + "\\bin\\" ) ;
+				x += _search_path_0( it + "\\" ) ;
 			}
 		}
 
-		return s ;
+		return x ;
 	}else{
 		const auto b = a + "/bin/" ;
 		const auto c = a + "/.bin/" ;
@@ -131,7 +146,8 @@ QStringList engines::executableSearchPaths()
 
 QStringList engines::executableSearchPaths( const engines::engine& engine )
 {
-	return _search_path( { SiriKali::Windows::engineInstalledDir( engine ) } ) ;
+	return _search_path( { SiriKali::Windows::engineInstalledDir( engine ),
+			       engine.windowsExecutableFolderPath() } ) ;
 }
 
 QString engines::executableFullPath( const QString& f )
@@ -150,15 +166,13 @@ void engines::version::logError() const
 	utility::debug() << a.arg( m_engineName,this->toString() ) ;
 }
 
-engines::engine::~engine()
-{
-}
-
 engines::engine::args engines::engine::command( const QByteArray& password,
-						const engines::engine::cmdArgsList& args ) const
+						const engines::engine::cmdArgsList& args,
+						bool create ) const
 {
 	Q_UNUSED( password )
 	Q_UNUSED( args )
+	Q_UNUSED( create )
 	return {} ;
 }
 
@@ -169,7 +183,7 @@ engines::engine::status engines::engine::errorCode( const QString& e,int s ) con
 	return engines::engine::status::backendFail ;
 }
 
-void engines::engine::updateVolumeList( const engines::engine::cmdArgsList::options& e ) const
+void engines::engine::updateVolumeList( const engines::engine::cmdArgsList& e ) const
 {
 	Q_UNUSED( e )
 }
@@ -189,7 +203,7 @@ Task::future< QString >& engines::engine::volumeProperties( const QString& ciphe
 
 			auto a = utility::split( it,' ' ) ;
 
-			auto b = [ & ](){
+			auto exe = [ & ](){
 
 				if( a.at( 0 ) == this->executableName() ){
 
@@ -199,21 +213,23 @@ Task::future< QString >& engines::engine::volumeProperties( const QString& ciphe
 				}
 			}() ;
 
-			a.removeFirst() ;
+			if( !exe.isEmpty() ){
 
-			auto c = a.join( " " ) ;
+				a.removeFirst() ;
 
-			if( !b.isEmpty() ){
+				for( auto& it : a ){
 
-				auto x = utility::Task::makePath( cipherFolder ) ;
-				auto y  = utility::Task::makePath( mountPoint ) ;
+					if( it == "%{cipherFolder}" ){
 
-				c.replace( "%{cipherFolder}",x ) ;
-				c.replace( "%{plainFolder}",y ) ;
+						it = cipherFolder ;
 
-				auto d = utility::Task::makePath( b ) ;
+					}else if( it == "%{plainFolder}" ){
 
-				auto e = utility::unwrap( utility::Task::run( d + " " + c ) ) ;
+						it = mountPoint ;
+					}
+				}
+
+				auto e = utility::unwrap( utility::Task::run( exe,a ) ) ;
 
 				if( e.success() ){
 
@@ -226,12 +242,51 @@ Task::future< QString >& engines::engine::volumeProperties( const QString& ciphe
 	} ) ;
 }
 
-engines::engine::status engines::engine::unmount( const QString& cipherFolder,
-						  const QString& mountPoint,
-						  int maxCount ) const
+bool engines::engine::unmountVolume( const engines::engine::exe_args_const& exe,bool usePolkit ) const
 {
-	Q_UNUSED( cipherFolder )
-	return siritask::unmountVolume( mountPoint,this->unMountCommand(),maxCount ) ;
+	int timeOut = 10000 ;
+
+	auto& s = utility::Task::run( exe.exe,exe.args,timeOut,usePolkit ) ;
+
+	return utility::unwrap( s ).success() ;
+}
+
+engines::engine::status engines::engine::unmount( const engines::engine::unMount& e ) const
+{
+	auto cmd = [ & ]()->engines::engine::exe_args{
+
+		if( this->unMountCommand().isEmpty() ){
+
+			if( utility::platformIsOSX() ){
+
+				return { "umount",{ e.mountPoint } } ;
+			}else{
+				return { "fusermount",{ "-u",e.mountPoint } } ;
+			}
+		}else{
+			auto s = this->unMountCommand() ;
+			auto e = s.takeAt( 0 ) ;
+
+			return { e,s } ;
+		}
+	}() ;
+
+	if( this->unmountVolume( cmd,false ) ){
+
+		return engines::engine::status::success ;
+	}else{
+		for( int i = 1 ; i < e.numberOfAttempts ; i++ ){
+
+			utility::Task::waitForOneSecond() ;
+
+			if( this->unmountVolume( cmd,false ) ){
+
+				return engines::engine::status::success ;
+			}
+		}
+
+		return engines::engine::status::failedToUnMount ;
+	}
 }
 
 const QProcessEnvironment& engines::engine::getProcessEnvironment() const
@@ -266,9 +321,9 @@ static engines::engineVersion _installedVersion( const engines::engine& e,
 						 const QProcessEnvironment env,
 						 const engines::engine::BaseOptions::vInfo& v )
 {
-	const auto cmd = utility::Task::makePath( e.executableFullPath() ) + " " + v.versionArgument ;
+	const auto& cmd = e.executableFullPath() ;
 
-	const auto r = utility::unwrap( ::Task::process::run( cmd,{},-1,{},env ) ) ;
+	const auto r = utility::unwrap( ::Task::process::run( cmd,{ v.versionArgument },-1,{},env ) ) ;
 
 	const auto m = utility::split( v.readFromStdOut ? r.std_out() : r.std_error(),'\n' ) ;
 
@@ -322,8 +377,25 @@ static QProcessEnvironment _set_env( const engines::engine& engine )
 	return m ;
 }
 
+engines::engine::~engine()
+{
+}
+
+static engines::engine::BaseOptions _update( engines::engine::BaseOptions m )
+{
+	for( auto& it : m.names ){
+
+		if( !it.isEmpty() ){
+
+			it.replace( 0,1,it.at( 0 ).toUpper() ) ;
+		}
+	}
+
+	return m ;
+}
+
 engines::engine::engine( engines::engine::BaseOptions o ) :
-	m_Options( std::move( o ) ),
+	m_Options( _update( std::move( o ) ) ),
 	m_processEnvironment( _set_env( *this ) ),
 	m_exeFullPath( [ this ](){ return engines::executableFullPath( this->executableName(),*this ) ; } ),
 	m_version( this->name(),[ this ](){ return _installedVersion( *this,m_processEnvironment,m_Options.versionInfo ) ; } )
@@ -380,7 +452,7 @@ bool engines::engine::supportsMountPathsOnWindows() const
 	return m_Options.supportsMountPathsOnWindows ;
 }
 
-bool engines::engine::requiresAPassword( const engines::engine::cmdArgsList::options& opts ) const
+bool engines::engine::requiresAPassword( const engines::engine::cmdArgsList& opts ) const
 {
 	Q_UNUSED( opts )
 
@@ -400,6 +472,36 @@ bool engines::engine::autorefreshOnMountUnMount() const
 bool engines::engine::backendRequireMountPath() const
 {
 	return m_Options.backendRequireMountPath ;
+}
+
+bool engines::engine::backendRunsInBackGround() const
+{
+	return m_Options.backendRunsInBackGround ;
+}
+
+bool engines::engine::acceptsSubType() const
+{
+	return m_Options.acceptsSubType ;
+}
+
+bool engines::engine::acceptsVolName() const
+{
+	return m_Options.acceptsVolName ;
+}
+
+bool engines::engine::likeSsh() const
+{
+	return m_Options.likeSsh ;
+}
+
+bool engines::engine::autoCreatesMountPoint() const
+{
+	return m_Options.autoCreatesMountPoint ;
+}
+
+bool engines::engine::autoDeletesMountPoint() const
+{
+	return m_Options.autoDeletesMountPoint ;
 }
 
 bool engines::engine::takesTooLongToUnlock() const
@@ -495,6 +597,21 @@ const QString& engines::engine::configFileName() const
 	}
 }
 
+const QString& engines::engine::keyFileArgument() const
+{
+	return m_Options.keyFileArgument ;
+}
+
+const QString& engines::engine::mountControlStructure() const
+{
+	return m_Options.mountControlStructure ;
+}
+
+const QString& engines::engine::createControlStructure() const
+{
+	return m_Options.createControlStructure ;
+}
+
 const QString& engines::engine::incorrectPasswordText() const
 {
 	return m_Options.incorrectPasswordText ;
@@ -505,12 +622,17 @@ const QString& engines::engine::incorrectPasswordCode() const
 	return m_Options.incorrectPassWordCode ;
 }
 
-const QString& engines::engine::unMountCommand() const
+const QStringList& engines::engine::unMountCommand() const
 {
 	return m_Options.unMountCommand ;
 }
 
-const QString& engines::engine::windowsUnMountCommand() const
+const QString &engines::engine::configFileArgument() const
+{
+	return m_Options.configFileArgument ;
+}
+
+const QStringList& engines::engine::windowsUnMountCommand() const
 {
 	return m_Options.windowsUnMountCommand ;
 }
@@ -525,6 +647,11 @@ const QString& engines::engine::windowsInstallPathRegistryValue() const
 	return m_Options.windowsInstallPathRegistryValue ;
 }
 
+const QString& engines::engine::windowsExecutableFolderPath() const
+{
+	return m_Options.windowsExecutableFolderPath ;
+}
+
 const QStringList& engines::engine::volumePropertiesCommands() const
 {
 	return m_Options.volumePropertiesCommands ;
@@ -533,6 +660,11 @@ const QStringList& engines::engine::volumePropertiesCommands() const
 const engines::version& engines::engine::installedVersion() const
 {
 	return m_version ;
+}
+
+const QString& engines::engine::sshOptions() const
+{
+	return m_Options.sshOptions ;
 }
 
 const QString& engines::engine::minimumVersion() const
@@ -567,32 +699,26 @@ engines::engine::error engines::engine::errorCode( const QString& e ) const
 	}
 }
 
-static bool _illegal_path( const engines::engine::cmdArgsList::options& opts,
-			   const engines::engine& engine )
+static bool _illegal_path( const engines::engine::cmdArgsList& opts,const engines::engine& engine )
 {
-	if( engine.requiresPolkit() && utility::useSiriPolkit() ){
+	if( engine.backendRequireMountPath() ){
 
-		if( engine.backendRequireMountPath() ){
-
-			return opts.cipherFolder.contains( " " ) || opts.plainFolder.contains( " " ) ;
-		}else {
-			return opts.cipherFolder.contains( " " ) ;
-		}
-	}else{
-		return false ;
+		return opts.cipherFolder.contains( " " ) || opts.mountPoint.contains( " " ) ;
+	}else {
+		return opts.cipherFolder.contains( " " ) ;
 	}
 }
 
-engines::engine::status engines::engine::passAllRequirenments( const engines::engine::cmdArgsList::options& opt ) const
+engines::engine::status engines::engine::passAllRequirenments( const engines::engine::cmdArgsList& opt ) const
 {
 	if( this->unknown() ){
 
 		return engines::engine::status::unknown ;
 	}
 
-	if( utility::platformIsLinux() && _illegal_path( opt,*this ) ){
+	if( this->executableFullPath().isEmpty() ){
 
-		return engines::engine::status::IllegalPath ;
+		return this->notFoundCode() ;
 	}
 
 	if( opt.key.isEmpty() && this->requiresAPassword( opt ) ){
@@ -600,21 +726,37 @@ engines::engine::status engines::engine::passAllRequirenments( const engines::en
 		return engines::engine::status::backendRequiresPassword ;
 	}
 
-	if( this->requiresPolkit() && !utility::enablePolkit() ){
+	if( utility::platformIsLinux() ){
 
-		return engines::engine::status::failedToStartPolkit ;
+		if( this->requiresPolkit() ){
+
+			if( _illegal_path( opt,*this ) ){
+
+				return engines::engine::status::IllegalPath ;
+			}
+
+			if( !utility::enablePolkit() ){
+
+				return engines::engine::status::failedToStartPolkit ;
+			}
+		}
+	}
+
+	if( this->configFileArgument().isEmpty() && !opt.configFilePath.isEmpty() ){
+
+		return engines::engine::status::backEndDoesNotSupportCustomConfigPath ;
 	}
 
 	if( utility::platformIsWindows() ){
 
-		if( !utility::isDriveLetter( opt.plainFolder ) ){
+		if( !utility::isDriveLetter( opt.mountPoint ) ){
 
-			if( utility::folderNotEmpty( opt.plainFolder ) ){
+			if( utility::folderNotEmpty( opt.mountPoint ) ){
 
 				return engines::engine::status::mountPointFolderNotEmpty ;
 			}
 
-			auto a = SiriKali::Windows::driveHasSupportedFileSystem( opt.plainFolder ) ;
+			auto a = SiriKali::Windows::driveHasSupportedFileSystem( opt.mountPoint ) ;
 
 			if( !a.first ){
 
@@ -627,20 +769,19 @@ engines::engine::status engines::engine::passAllRequirenments( const engines::en
 	return engines::engine::status::success ;
 }
 
-void engines::engine::updateOptions( engines::engine::cmdArgsList::options& e,bool s ) const
+void engines::engine::updateOptions( engines::engine::cmdArgsList& e,bool s ) const
 {
 	Q_UNUSED( e )
 	Q_UNUSED( s )
 }
 
-QString engines::engine::setConfigFilePath( const QString& e ) const
+void engines::engine::updateOptions( engines::engine::commandOptions& opts,
+				     const engines::engine::cmdArgsList& args,
+				     bool creating ) const
 {
-	if( m_Options.configFileArgument.isEmpty() ){
-
-		return QString() ;
-	}else{
-		return m_Options.configFileArgument + " " + e ;
-	}
+	Q_UNUSED( creating )
+	Q_UNUSED( opts )
+	Q_UNUSED( args )
 }
 
 QByteArray engines::engine::setPassword( const QByteArray& e ) const
@@ -800,12 +941,16 @@ engines::engine::ownsCipherFolder engines::engine::ownsCipherPath( const QString
 
 	}else if( configFilePath.isEmpty() ){
 
+		QString configPath ;
+
 		auto a = _found( this->configFileNames(),[ & ]( const QString& e ){
 
-			return utility::pathExists( cipherPath + "/" + e ) ;
+			configPath = cipherPath + "/" + e ;
+
+			return utility::pathExists( configPath ) ;
 		} ) ;
 
-		return { a,cipherPath,configFilePath } ;
+		return { a,cipherPath,std::move( configPath ) } ;
 	}else{
 		auto ee = [ & ]( const QString& e ){
 
@@ -1140,26 +1285,32 @@ QString engines::engine::cmdStatus::toString() const
 	return e + "\n----------------------------------------\n" + m_message ;
 }
 
-engines::engine::createGUIOptions::createOptions::createOptions( const QString& createOpts,
+engines::engine::createGUIOptions::createOptions::createOptions( const QString& cOpts,
 								 const QString& configFile,
 								 const QString& keyFile,
 								 const engines::engine::booleanOptions& r ) :
-	createOpts( createOpts ),
 	configFile( configFile ),
 	keyFile( keyFile ),
 	opts( r ),
 	success( true )
 {
+	if( !cOpts.isEmpty() ){
+
+		createOpts = utility::split( cOpts,',' ) ;
+	}
 }
 
-engines::engine::createGUIOptions::createOptions::createOptions( const QString& createOpts,
+engines::engine::createGUIOptions::createOptions::createOptions( const QString& cOpts,
 								 const QString& configFile,
 								 const QString& keyFile ) :
-	createOpts( createOpts ),
 	configFile( configFile ),
 	keyFile( keyFile ),
 	success( true )
 {
+	if( !cOpts.isEmpty() ){
+
+		createOpts = utility::split( cOpts,',' ) ;
+	}
 }
 
 engines::engine::createGUIOptions::createOptions::createOptions( const engines::engine::booleanOptions& r ) :
@@ -1174,19 +1325,27 @@ engines::engine::createGUIOptions::createOptions::createOptions() : success( fal
 engines::engine::mountGUIOptions::mountOptions::mountOptions( const volumeInfo& e ) :
 	idleTimeOut( e.idleTimeOut() ),
 	configFile( e.configFilePath() ),
-	mountOpts( e.mountOptions() ),
 	keyFile( e.keyFile() )
 {
 	opts.unlockInReverseMode = e.reverseMode() ;
+
+	if( !e.mountOptions().isEmpty() ){
+
+		mountOpts = utility::split( e.mountOptions(),',' ) ;
+	}
 }
 
 engines::engine::mountGUIOptions::mountOptions::mountOptions( const favorites::entry& e ) :
 	idleTimeOut( e.idleTimeOut ),
 	configFile( e.configFilePath ),
-	mountOpts( e.mountOptions ),
 	keyFile( e.keyFile )
 {
 	opts.unlockInReverseMode = e.reverseMode ;
+
+	if( !e.mountOptions.isEmpty() ){
+
+		mountOpts = utility::split( e.mountOptions,',' ) ;
+	}
 }
 
 engines::engine::mountGUIOptions::mountOptions::mountOptions( const QString& idleTimeOut,
@@ -1196,20 +1355,22 @@ engines::engine::mountGUIOptions::mountOptions::mountOptions( const QString& idl
 							      const engines::engine::booleanOptions& r ) :
 	idleTimeOut( idleTimeOut ),
 	configFile( configFile ),
-	mountOpts( mountOptions ),
 	keyFile( keyFile ),
 	opts( r )
 {
+	if( !mountOptions.isEmpty() ){
+
+		mountOpts = utility::split( mountOptions,',' ) ;
+	}
 }
 
 engines::engine::mountGUIOptions::mountOptions::mountOptions() : success( false )
 {
 }
 
-engines::engine::cmdArgsList::options::options( const favorites::entry& e,
-						const QByteArray& volumeKey ) :
+engines::engine::cmdArgsList::cmdArgsList( const favorites::entry& e,const QByteArray& volumeKey ) :
 	cipherFolder( e.volumePath ),
-	plainFolder( e.mountPointPath ),
+	mountPoint( e.mountPointPath ),
 	key( volumeKey ),
 	idleTimeout( e.idleTimeOut ),
 	configFilePath( e.configFilePath ),
@@ -1219,12 +1380,12 @@ engines::engine::cmdArgsList::options::options( const favorites::entry& e,
 	boolOptions.unlockInReverseMode = e.reverseMode ;
 }
 
-engines::engine::cmdArgsList::options::options( const QString& cipher_folder,
-						const QString& plain_folder,
-						const QByteArray& volume_key,
-						const engines::engine::createGUIOptions::createOptions& e ) :
+engines::engine::cmdArgsList::cmdArgsList( const QString& cipher_folder,
+					   const QString& plain_folder,
+					   const QByteArray& volume_key,
+					   const engines::engine::createGUIOptions::createOptions& e ) :
 	cipherFolder( cipher_folder ),
-	plainFolder( plain_folder ),
+	mountPoint( plain_folder ),
 	key( volume_key ),
 	idleTimeout( e.idleTimeOut ),
 	configFilePath( e.configFile ),
@@ -1235,12 +1396,12 @@ engines::engine::cmdArgsList::options::options( const QString& cipher_folder,
 {
 }
 
-engines::engine::cmdArgsList::options::options( const QString& cipher_folder,
-						const QString& plain_folder,
-						const QByteArray& volume_key,
-						const engines::engine::mountGUIOptions::mountOptions& e ) :
+engines::engine::cmdArgsList::cmdArgsList( const QString& cipher_folder,
+					   const QString& plain_folder,
+					   const QByteArray& volume_key,
+					   const engines::engine::mountGUIOptions::mountOptions& e ) :
 	cipherFolder( cipher_folder ),
-	plainFolder( plain_folder ),
+	mountPoint( plain_folder ),
 	key( volume_key ),
 	idleTimeout( e.idleTimeOut ),
 	configFilePath( e.configFile ),
@@ -1253,14 +1414,15 @@ engines::engine::cmdArgsList::options::options( const QString& cipher_folder,
 
 engines::engine::args::args( const engines::engine::cmdArgsList& m,
 			     const engines::engine::commandOptions& s,
-			     const QString& c ) :
+			     const QString& c,
+			     const QStringList& l ) :
 	cmd( c ),
 	cipherPath( m.cipherFolder ),
-	mountPath( m.mountPoint ),
-	fuseOptions( s.constFuseOpts() ),
-	exeOptions( s.constExeOptions() ),
+	mountPath( m.mountPoint ),	
 	mode( s.mode() ),
-	subtype( s.subType() )
+	subtype( s.subType() ),
+	cmd_args( l ),
+	fuseOptions( s.constFuseOpts() )
 {
 }
 
@@ -1268,41 +1430,46 @@ engines::engine::args::args()
 {
 }
 
-void engines::engine::encodeSpecialCharacters( QString& e )
-{
-	struct args{
+struct _args{
 
-		const char * first ;
-		const char * second ;
-	} ;
+	const char * first ;
+	const char * second ;
 
-	static std::vector< args > s{ { ",","SiriKaliSpecialCharacter001" } } ;
+	template< typename T >
+	static void replace( QString& e,const T& s )
+	{
+		for( const auto& it : s ){
 
-	for( const auto& it : s ){
-
-		e.replace( it.first,it.second ) ;
+			e.replace( it.first,it.second ) ;
+		}
 	}
+} ;
+
+static void _replace( QString& e )
+{
+	Q_UNUSED( e )
 }
 
+template< typename B,typename ... C >
+static void _replace( QString& a,B&& b,C&& ... c )
+{
+	a.replace( b.first,b.second ) ;
+
+	_replace( a,std::forward< C >( c ) ... ) ;
+}
+
+void engines::engine::encodeSpecialCharacters( QString& e )
+{
+	_replace( e,std::make_pair( ",","SiriKaliSpecialCharacter001" ) ) ;
+}
 
 void engines::engine::decodeSpecialCharacters( QString& e )
 {
-	struct args{
-
-		const char * first ;
-		const char * second ;
-	} ;
-
-	static std::vector< args > s{ { "SiriKaliSpecialCharacter001","," },
-				      { "\\012","\n" },
-				      { "\\040"," " },
-				      { "\\134","\\" },
-				      { "\\011","\\t" } } ;
-
-	for( const auto& it : s ){
-
-		e.replace( it.first,it.second ) ;
-	}
+	_replace( e,std::make_pair( "SiriKaliSpecialCharacter001","," ),
+		    std::make_pair( "\\012","\n" ),
+		    std::make_pair( "\\040"," " ),
+		    std::make_pair( "\\134","\\" ),
+		    std::make_pair( "\\011","\\t" ) ) ;
 }
 
 QString engines::engine::decodeSpecialCharactersConst( const QString& e )
@@ -1314,9 +1481,13 @@ QString engines::engine::decodeSpecialCharactersConst( const QString& e )
 	return m ;
 }
 
-engines::engine::commandOptions::commandOptions( const engines::engine::cmdArgsList& e,
-						 const QString& f,
-						 const QString& subtype )
+engines::engine::commandOptions::commandOptions()
+{
+}
+
+engines::engine::commandOptions::commandOptions( bool creating,
+						 const engines::engine& engine,
+						 const engines::engine::cmdArgsList& e )
 {
 	auto cipherFolder = [ & ]( QString s ){
 
@@ -1325,68 +1496,111 @@ engines::engine::commandOptions::commandOptions( const engines::engine::cmdArgsL
 		return s ;
 	} ;
 
-	for( const auto& it : utility::split( e.opt.mountOptions,',' ) ) {
+	auto _volname = []( QString& e ){
 
-		if( it.startsWith( '-' ) ){
+		if( e.size() > 40 ){
+			/*
+			 * we are making sure that volname value does not exceed 32 characters.
+			 * 40 is the sum of characters in "volname="(8) plus the value that must be
+			 * less or equal to 32.
+			 */
 
-			m_exeOptions += it + " " ;
-		}else{
-			m_fuseOptions += it + "," ;
+			e = e.mid( 0,37 ) + "...," ;
+		}
+	} ;
+
+	bool acceptsVolname = engine.acceptsVolName() ;
+
+	bool hasNoVolname = true ;
+
+	bool notLinux = !utility::platformIsLinux() ;
+
+	m_fuseOptions = e.mountOptions ;
+
+	for( int i = 0 ; i < m_fuseOptions.size() ; i++ ){
+
+		auto& e = m_fuseOptions[ i ] ;
+
+		if( e.startsWith( '-' ) ){
+
+			m_exeOptions.append( utility::split( e,' ' ) ) ;
+
+			m_fuseOptions.removeAt( i ) ;
+
+			i-- ;
+
+		}else if( e.startsWith( "volname=" ) ){
+
+			if( notLinux && acceptsVolname ){
+
+				hasNoVolname = false ;
+
+				_volname( e ) ;
+			}else{
+				m_fuseOptions.removeAt( i ) ;
+
+				i-- ;
+			}
 		}
 	}
 
-	if( m_exeOptions.endsWith( " " ) ){
-
-		m_exeOptions = utility::removeLast( m_exeOptions,1 ) ;
-	}
-
-	if( m_fuseOptions.endsWith( "," ) ){
-
-		m_fuseOptions = utility::removeLast( m_fuseOptions,1 ) ;
-	}
-
-	if( !utility::platformIsLinux() && !m_fuseOptions.contains( "volname=" ) ){
+	if( notLinux && hasNoVolname && acceptsVolname ){
 
 		QString s ;
 
 		if( utility::platformIsOSX() ){
 
-			s = utility::split( e.opt.plainFolder,'/' ).last() ;
+			s = utility::split( e.mountPoint,'/' ).last() ;
 		}else{
-			s = utility::split( cipherFolder( e.opt.cipherFolder ),'/' ).last() ;
+			s = utility::split( cipherFolder( e.cipherFolder ),'/' ).last() ;
 		}
 
 		if( !s.isEmpty() ){
 
-			if( m_fuseOptions.isEmpty() ){
+			auto v = "volname=" + s ;
 
-				m_fuseOptions = "volname=" + utility::Task::makePath( s ) ;
-			}else{
-				m_fuseOptions += ",volname=" + utility::Task::makePath( s ) ;
-			}
+			_volname( v ) ;
+
+			m_fuseOptions.append( v ) ;
 		}
 	}
 
-	if( e.opt.boolOptions.unlockInReadOnly ){
+	const auto& name = engine.name() ;
+
+	if( engine.acceptsSubType() ){
+
+		m_subtype = name ;
+
+		m_fuseOptions.insert( 0,"subtype=" + m_subtype ) ;
+	}
+
+	auto m = QString( "fsname=%1@%2" ).arg( name,cipherFolder( e.cipherFolder ) ) ;
+
+	m_fuseOptions.insert( 0,m ) ;
+
+	if( e.boolOptions.unlockInReadOnly ){
 
 		m_mode = "ro" ;
 	}else{
 		m_mode = "rw" ;
 	}
 
-	m_subtype = subtype ;
+	m_fuseOptions.insert( 0,m_mode ) ;
 
-	QString stype = subtype.isEmpty() ? "" : ",subtype=" + subtype ;
+	m_fuseOptions.removeAll( QString() ) ;
 
-	auto ss = cipherFolder( e.cipherFolder ) ;
+	engine.updateOptions( *this,e,creating ) ;
+}
 
-	QString s = " -o %1,fsname=%2@%3%4" ;
+void engines::engine::commandOptions::Options::_add( const engines::engine::commandOptions::fuseOptions& s )
+{
+	const auto& e = s.get() ;
 
-	if( m_fuseOptions.isEmpty() ){
+	if( !e.isEmpty() ){
 
-		m_fuseOptions = s.arg( m_mode,f,ss,stype ) ;
-	}else{
-		m_fuseOptions = s.arg( m_mode,f,ss,stype ) + "," + m_fuseOptions ;
+		m_options.append( "-o" ) ;		
+
+		m_options.append( e.join( ',' ) ) ;
 	}
 }
 
@@ -1505,7 +1719,8 @@ bool engines::versionGreaterOrEqual::setCallback( bool m,const engines::engine& 
 	return _result( m,engine,major,minor,patch ) ;
 }
 
-bool engines::versionGreaterOrEqual::setCallback( bool m,const engines::engine& engine,
+bool engines::versionGreaterOrEqual::setCallback( bool m,
+						  const engines::engine& engine,
 						  const QString& u )
 {
 	return _result( m,engine,u ) ;
