@@ -3,37 +3,6 @@ Author: David Steele <steele@debian.org>
 Forwarded: no
 Last-Update: 2020-08-07
 
---- a/src/favorites.cpp
-+++ b/src/favorites.cpp
-@@ -171,7 +171,7 @@
- 
- 	}catch( ... ){
- 
--		_log_error( "Unknown error has occured",path ) ;
-+		_log_error( "Unknown error has occurred",path ) ;
- 	}
- 
- 	return {} ;
-@@ -298,7 +298,7 @@
- 
- 	}catch( ... ){
- 
--		_log_error( "Unknown error has occured",a ) ;
-+		_log_error( "Unknown error has occurred",a ) ;
- 	}
- 
- 	return error::FAILED_TO_CREATE_ENTRY ;
---- a/src/engines/custom.cpp
-+++ b/src/engines/custom.cpp
-@@ -120,7 +120,7 @@
- 
- 	}catch( ... ){
- 
--		_log_error( "Unknown error has occured",s ) ;
-+		_log_error( "Unknown error has occurred",s ) ;
- 	}
- 
- 	return {} ;
 --- a/src/3rdParty/lxqt_wallet/backend/lxqtwallet.h
 +++ b/src/3rdParty/lxqt_wallet/backend/lxqtwallet.h
 @@ -289,7 +289,7 @@
@@ -90,40 +59,9 @@ Last-Update: 2020-08-07
  			}
  		}
  	}else if( stringsAreEqual( command,"version" ) ){
---- a/src/createbackendwindow.cpp
-+++ b/src/createbackendwindow.cpp
-@@ -186,7 +186,7 @@
- 
- 	}catch( ... ){
- 
--		_log_error( "Unknown error has occured",path ) ;
-+		_log_error( "Unknown error has occurred",path ) ;
- 	}
- 
- 	this->Hide() ;
---- a/src/engines/fscrypt.cpp
-+++ b/src/engines/fscrypt.cpp
-@@ -581,7 +581,7 @@
- 
- 	}catch( ... ){
- 
--		_log_error( "Unknown error has occured",m_configFilePath ) ;
-+		_log_error( "Unknown error has occurred",m_configFilePath ) ;
- 	}
- 
- 	return {} ;
-@@ -608,7 +608,7 @@
- 
- 	}catch( ... ){
- 
--		_log_error( "Unknown error has occured",m_configFilePath ) ;
-+		_log_error( "Unknown error has occurred",m_configFilePath ) ;
- 	}
- }
- 
 --- a/src/utility.cpp
 +++ b/src/utility.cpp
-@@ -1337,7 +1337,7 @@
+@@ -1395,7 +1395,7 @@
  
  			return m ;
  		}else{
