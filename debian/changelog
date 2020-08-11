@@ -1,6 +1,10 @@
 sirikali (1.4.6-1) UNRELEASED; urgency=medium
 
+  [ David Steele ]
   * New upstream version.
+
+  [ Debian Janitor ]
+  * Use secure URI in Homepage field.
 
  -- David Steele <steele@debian.org>  Fri, 07 Aug 2020 22:07:17 -0400
 

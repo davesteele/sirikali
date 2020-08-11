@@ -13,7 +13,7 @@ Build-Depends: debhelper-compat (= 13),
                bzip2,
 Standards-Version: 4.5.0
 Rules-Requires-Root: no
-Homepage: http://mhogomchungu.github.io/sirikali
+Homepage: https://mhogomchungu.github.io/sirikali
 Vcs-Git: https://github.com/davesteele/sirikali.git -b debian
 Vcs-Browser: https://github.com/davesteele/sirikali
 
