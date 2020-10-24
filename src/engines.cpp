@@ -34,6 +34,8 @@
 #include "win.h"
 #include "engines/options.h"
 
+#include <QCoreApplication>
+
 static QStringList _search_path_0( const QString& e )
 {
 	QStringList s = { e,e + "\\bin\\",e + "\\.bin\\" };
@@ -52,7 +54,7 @@ static QStringList _search_path_0( const QString& e )
 
 static QStringList _search_path( const QStringList& m )
 {
-	const auto a = QDir::homePath().toLatin1() ;
+	const auto a = QDir::homePath().toUtf8() ;
 
 	if( utility::platformIsWindows() ){
 
@@ -72,6 +74,7 @@ static QStringList _search_path( const QStringList& m )
 	}else{
 		const auto b = a + "/bin/" ;
 		const auto c = a + "/.bin/" ;
+		const auto d = QCoreApplication::applicationDirPath().toUtf8() ;
 
 		return { "/usr/local/bin/",
 			"/usr/local/sbin/",
@@ -84,7 +87,8 @@ static QStringList _search_path( const QStringList& m )
 			"/opt/bin/",
 			"/opt/sbin/",
 			 b.constData(),
-			 c.constData() } ;
+			 c.constData(),
+			 d.constData() } ;
 	}
 }
 
@@ -188,7 +192,7 @@ void engines::engine::updateVolumeList( const engines::engine::cmdArgsList& e ) 
 	Q_UNUSED( e )
 }
 
-QStringList engines::engine::mountInfo( const QStringList& e ) const
+volumeInfo::List engines::engine::mountInfo( const volumeInfo::List& e ) const
 {
 	Q_UNUSED( e )
 	return {} ;
@@ -391,6 +395,11 @@ static engines::engine::BaseOptions _update( engines::engine::BaseOptions m )
 		}
 	}
 
+	if( !m.displayName.isEmpty() ){
+
+		m.displayName.replace( 0,1,m.displayName.at( 0 ).toUpper() ) ;
+	}
+
 	return m ;
 }
 
@@ -456,7 +465,22 @@ bool engines::engine::requiresAPassword( const engines::engine::cmdArgsList& opt
 {
 	Q_UNUSED( opts )
 
+	return this->requiresAPassword() ;
+}
+
+bool engines::engine::requiresAPassword() const
+{
 	return m_Options.requiresAPassword ;
+}
+
+bool engines::engine::requiresNoPassword() const
+{
+	return !this->requiresAPassword() ;
+}
+
+bool engines::engine::usesOnlyMountPoint() const
+{
+	return m_Options.usesOnlyMountPoint ;
 }
 
 bool engines::engine::customBackend() const
@@ -662,6 +686,23 @@ const engines::version& engines::engine::installedVersion() const
 	return m_version ;
 }
 
+const QString& engines::engine::displayName() const
+{
+	return m_Options.displayName ;
+}
+
+const QString& engines::engine::uiName() const
+{
+	const auto& s = this->displayName() ;
+
+	if( s.isEmpty() ){
+
+		return this->name() ;
+	}else {
+		return s ;
+	}
+}
+
 const QString& engines::engine::sshOptions() const
 {
 	return m_Options.sshOptions ;
@@ -669,7 +710,7 @@ const QString& engines::engine::sshOptions() const
 
 const QString& engines::engine::minimumVersion() const
 {
-	return m_Options.minimumVersion ;
+	return m_Options.versionMinimum ;
 }
 
 static bool _contains( const QString& e,const QStringList& m )
@@ -766,13 +807,34 @@ engines::engine::status engines::engine::passAllRequirenments( const engines::en
 		}
 	}
 
+	const auto& v = this->minimumVersion() ;
+
+	if( this->customBackend() && !v.isEmpty() ){
+
+		auto s = this->installedVersion().greaterOrEqual( v ) ;
+
+		if( s.has_value() ){
+
+			if( s.value() ){
+
+				return engines::engine::status::success ;
+			}else{
+				return engine::engine::status::backEndFailedToMeetMinimumRequirenment ;
+			}
+		}else{
+			utility::debug() << "Trouble ahead, failed to get backend's version" ;
+		}
+	}
+
 	return engines::engine::status::success ;
 }
 
 void engines::engine::updateOptions( engines::engine::cmdArgsList& e,bool s ) const
 {
-	Q_UNUSED( e )
-	Q_UNUSED( s )
+	if( !s && this->likeSsh() ){
+
+		e.cipherFolder = utility::likeSshRemovePortNumber( e.cipherFolder ) ;
+	}
 }
 
 void engines::engine::updateOptions( engines::engine::commandOptions& opts,
@@ -820,46 +882,58 @@ bool engines::atLeastOneDealsWithFiles() const
 	return false ;
 }
 
-QStringList engines::mountInfo( const QStringList& m ) const
+volumeInfo::List engines::mountInfo( const volumeInfo::List& m ) const
 {
-	QStringList s ;
+	volumeInfo::List s ;
 
 	for( const auto& e : this->supportedEngines() ){
 
-		s += e->mountInfo( m ) ;
+		for( auto&& it : e->mountInfo( m ) ){
+
+			s.emplace_back( std::move( it ) ) ;
+		}
 	}
 
 	return s ;
 }
 
-QStringList engines::enginesWithNoConfigFile() const
+template< typename Engines,typename Function >
+static QStringList _configs( const Engines& engines,Function function )
 {
 	QStringList m ;
 
-	for( const auto& it : this->supportedEngines() ){
+	for( const auto& it : engines ){
 
-		if( !it->hasConfigFile() ){
+		if( function( it.get() ) ){
 
-			m.append( it->name() ) ;
+			const auto& e = it->displayName() ;
+
+			if( e.isEmpty() ){
+
+				m.append( it->name() ) ;
+			}else{
+				m.append( e ) ;
+			}
 		}
 	}
 
 	return m ;
 }
 
+QStringList engines::enginesWithNoConfigFile() const
+{
+	return _configs( this->supportedEngines(),[]( const engines::engine& engine ){
+
+		return !engine.hasConfigFile() ;
+	} ) ;
+}
+
 QStringList engines::enginesWithConfigFile() const
 {
-	QStringList m ;
+	return _configs( this->supportedEngines(),[]( const engines::engine& engine ){
 
-	for( const auto& it : this->supportedEngines() ){
-
-		if( it->hasConfigFile() ){
-
-			m.append( it->name() ) ;
-		}
-	}
-
-	return m ;
+		return engine.hasConfigFile() ;
+	} ) ;
 }
 
 const std::vector< engines::engine::Wrapper >& engines::supportedEngines() const
@@ -926,7 +1000,13 @@ engines::engine::ownsCipherFolder engines::engine::ownsCipherPath( const QString
 {
 	auto a = this->name() + " " ;
 
-	if( cipherPath.startsWith( a,Qt::CaseInsensitive ) ){
+	auto m = this->displayName() + " " ;
+
+	if( cipherPath.startsWith( m,Qt::CaseInsensitive ) ){
+
+		return { true,cipherPath.mid( m.size() ),configFilePath } ;
+
+	}else if( cipherPath.startsWith( a,Qt::CaseInsensitive ) ){
 
 		return { true,cipherPath.mid( a.size() ),configFilePath } ;
 
@@ -991,7 +1071,7 @@ engines::engineWithPaths engines::getByPaths( const QString& cipherPath,
 	return {} ;
 }
 
-const engines::engine& engines::getByFuseName( const QString& e ) const
+const engines::engine& engines::getByFsName( const QString& e ) const
 {
 	auto cmp = [ & ]( const QString& s ){ return !e.compare( s,Qt::CaseInsensitive ) ; } ;
 
@@ -1016,7 +1096,16 @@ const engines::engine& engines::getByName( const QString& e ) const
 
 		const auto& m = m_backends[ i ] ;
 
-		if( _found( m->names(),cmp ) ){
+		const auto& s = m->displayName() ;
+
+		if( s.isEmpty() ){
+
+			if( _found( m->names(),cmp ) ){
+
+				return *m ;
+			}
+
+		}else if( !s.compare( e,Qt::CaseInsensitive ) ){
 
 			return *m ;
 		}
@@ -1338,7 +1427,9 @@ engines::engine::mountGUIOptions::mountOptions::mountOptions( const volumeInfo& 
 engines::engine::mountGUIOptions::mountOptions::mountOptions( const favorites::entry& e ) :
 	idleTimeOut( e.idleTimeOut ),
 	configFile( e.configFilePath ),
-	keyFile( e.keyFile )
+	keyFile( e.keyFile ),
+	identityFile( e.identityFile ),
+	identityAgent( e.identityAgent )
 {
 	opts.unlockInReverseMode = e.reverseMode ;
 
@@ -1352,10 +1443,14 @@ engines::engine::mountGUIOptions::mountOptions::mountOptions( const QString& idl
 							      const QString& configFile,
 							      const QString& mountOptions,
 							      const QString& keyFile,
+							      const QString& identityFile,
+							      const QString& identityAgent,
 							      const engines::engine::booleanOptions& r ) :
 	idleTimeOut( idleTimeOut ),
 	configFile( configFile ),
 	keyFile( keyFile ),
+	identityFile( identityFile ),
+	identityAgent( identityAgent ),
 	opts( r )
 {
 	if( !mountOptions.isEmpty() ){
@@ -1374,7 +1469,9 @@ engines::engine::cmdArgsList::cmdArgsList( const favorites::entry& e,const QByte
 	key( volumeKey ),
 	idleTimeout( e.idleTimeOut ),
 	configFilePath( e.configFilePath ),
-	mountOptions( e.mountOptions )
+	identityFile( e.identityFile ),
+	identityAgent( e.identityAgent ),
+	mountOptions( e.mountOptions.isEmpty() ? QStringList() : utility::split( e.mountOptions,',' ) )
 {
 	boolOptions.unlockInReadOnly    = e.readOnlyMode.defined() ? e.readOnlyMode.True() : false ;
 	boolOptions.unlockInReverseMode = e.reverseMode ;
@@ -1389,7 +1486,6 @@ engines::engine::cmdArgsList::cmdArgsList( const QString& cipher_folder,
 	key( volume_key ),
 	idleTimeout( e.idleTimeOut ),
 	configFilePath( e.configFile ),
-	mountOptions( QString() ),
 	createOptions( e.createOpts ),
 	keyFile( e.keyFile ),
 	boolOptions( e.opts )
@@ -1405,6 +1501,8 @@ engines::engine::cmdArgsList::cmdArgsList( const QString& cipher_folder,
 	key( volume_key ),
 	idleTimeout( e.idleTimeOut ),
 	configFilePath( e.configFile ),
+	identityFile( e.identityFile ),
+	identityAgent( e.identityAgent ),
 	mountOptions( e.mountOpts ),
 	createOptions( QString() ),
 	keyFile( e.keyFile ),
@@ -1470,6 +1568,24 @@ void engines::engine::decodeSpecialCharacters( QString& e )
 		    std::make_pair( "\\040"," " ),
 		    std::make_pair( "\\134","\\" ),
 		    std::make_pair( "\\011","\\t" ) ) ;
+}
+
+QString engines::engine::encodeMountPath( const QString& e )
+{
+	auto m = e ;
+	/*
+	 * linux's /proc/self/mountinfo makes these substitutions and we make
+	 * them too to be consistent with linux
+	 */
+#if 0
+	_replace( m,std::make_pair( "\n","\\012" ),
+		    std::make_pair( " ","\\040" ),
+		    std::make_pair( "\\","\\134" ),
+		    std::make_pair( "\\t","\\011" ) ) ;
+#else
+	_replace( m,std::make_pair( " ","\\040" ) ) ;
+#endif
+	return m ;
 }
 
 QString engines::engine::decodeSpecialCharactersConst( const QString& e )

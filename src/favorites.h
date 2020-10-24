@@ -67,6 +67,10 @@ public:
 		{
 			return !this->undefined() ;
 		}
+		operator bool() const
+		{
+			return this->True() ;
+		}
 		bool True() const
 		{
 			return m_state == STATES::TRUE ;
@@ -121,6 +125,8 @@ public:
 		QString configFilePath ;
 		QString keyFile ;
 		QString idleTimeOut ;
+		QString identityFile ;
+		QString identityAgent ;
 		QString mountOptions ;
 		QString preMountCommand ;
 		QString postMountCommand ;
@@ -143,28 +149,55 @@ public:
 		return m ;
 	}
 
-	struct volEntry{
-
-		volEntry( const favorites::entry& e ) :
-			favorite( e ),password( e.password )
-		{
-		}
-		volEntry( const favorites::entry& e,QByteArray s ) :
-			favorite( e ),password( std::move( s ) )
-		{
-		}
-		const favorites::entry& favorite ;
-		QByteArray password ;
-	};
-
-	class temporaryFavoriteEntries{
+	class volEntry{
 	public:
-		void clear() ;
-		const favorites::entry& add( favorites::entry e ) ;
+		template< typename E,typename P >
+		volEntry( E&& e,P&& p,bool manage ) :
+			m_favorite( this->entry( std::forward< E >( e ),manage ) ),
+			m_password( std::forward< P >( p ) )
+		{
+		}
+		template< typename E >
+		volEntry( E&& e,bool manage ) :
+			m_favorite( this->entry( std::forward< E >( e ),manage ) ),
+			m_password( m_favorite.password )
+		{
+		}
+		volEntry( const favorites::entry& e ) :
+			m_favorite( e ),m_password( e.password )
+		{
+		}
+		template< typename P >
+		volEntry( const favorites::entry& e,P&& s ) :
+			m_favorite( e ),m_password( std::forward< P >( s ) )
+		{
+		}
+		const favorites::entry& favorite() const
+		{
+			return m_favorite ;
+		}
+		const QByteArray& password() const
+		{
+			return m_password ;
+		}
+		template< typename T >
+		void setPassword( T&& e )
+		{
+			m_password = std::forward< T >( e ) ;
+		}
 	private:
-		std::forward_list< favorites::entry > m_tmpFavoriteList ;
-		std::forward_list< favorites::entry >::iterator m_iter ;
-	} ;
+		template< typename E >
+		const favorites::entry& entry( E&& e,bool manage )
+		{
+			Q_UNUSED( manage )
+			utility::debug() << "favorites managing temporary entry: " + e.volumePath ;
+			m_tmpFavorite = std::make_unique< favorites::entry >( std::forward< E >( e ) ) ;
+			return *m_tmpFavorite ;
+		}
+		std::unique_ptr< favorites::entry > m_tmpFavorite ;
+		const favorites::entry& m_favorite ;
+		QByteArray m_password ;
+	};
 
 	using volumeList = std::vector< volEntry > ;
 
@@ -188,14 +221,11 @@ public:
 	const favorites::entry& readFavorite( const QString& volumePath,
 					      const QString& mountPath = QString() ) const ;
 
-	favorites::temporaryFavoriteEntries& getTmpFavoriteEntries() ;
-
 	favorites() ;
 private:
 	void reload() ;
 	std::vector< favorites::entry > m_favorites ;
 	favorites::entry m_empty ;
-	favorites::temporaryFavoriteEntries m_tmpFe ;
 };
 
 #endif // FAVORITES_H

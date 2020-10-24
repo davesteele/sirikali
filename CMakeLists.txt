@@ -4,7 +4,7 @@ set_property( GLOBAL PROPERTY ALLOW_DUPLICATE_CUSTOM_TARGETS ON )
 
 project( sirikali )
 
-set( PGR_VERSION "1.4.6" )
+set( PGR_VERSION "1.4.7" )
 set( COPYRIGHT_YEARS "2016-2020" )
 
 add_definitions( -Wextra -Wall -pedantic )
@@ -383,7 +383,7 @@ endif()
 
 if( UNIX AND NOT APPLE )
 
-    TARGET_LINK_LIBRARIES( sirikali ${Qt5DBus_LIBRARIES} ${Qt5Widgets_LIBRARIES} ${Qt5Core_LIBRARIES} ${Qt5Widgets_LIBRARIES} ${Qt5Network_LIBRARIES} ${library_pwquality} ${GCRYPT_LIBRARY} lxqt-wallet mhogomchungu_task mhogomchungu_network -L${GCRYPT_LIBRARY_PATH})
+    TARGET_LINK_LIBRARIES( sirikali ${Qt5DBus_LIBRARIES} ${Qt5Widgets_LIBRARIES} ${Qt5Core_LIBRARIES} ${Qt5Widgets_LIBRARIES} ${Qt5Network_LIBRARIES} ${library_pwquality} ${GCRYPT_LIBRARY} lxqt-wallet mhogomchungu_task mhogomchungu_network -L${GCRYPT_LIBRARY_PATH} -Wl,-znow)
 else()
 
 endif()

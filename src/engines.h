@@ -300,7 +300,7 @@ public:
 
 			cryfsMigrateFileSystem,
 			cryfsReplaceFileSystem,
-		        cryfsVersionTooOldToMigrateVolume,
+			cryfsVersionTooOldToMigrateVolume,
 			notSupportedMountPointFolderPath,
 			mountPointFolderNotEmpty,
 			IllegalPath,
@@ -408,11 +408,15 @@ public:
 					      const QString& configFile,
 					      const QString& mountOpes,
 					      const QString& keyFile,
+				              const QString& identityFile,
+				              const QString& identityAgent,
 					      const engines::engine::booleanOptions& opts ) ;
 				mountOptions() ;
 				QString idleTimeOut ;
 				QString configFile ;
 				QString keyFile ;
+				QString identityFile ;
+				QString identityAgent ;
 				QStringList mountOpts ;
 				engines::engine::booleanOptions opts ;
 				bool success = true ;
@@ -460,6 +464,8 @@ public:
 			QByteArray key ;
 			QString idleTimeout ;
 			QString configFilePath ;
+			QString identityFile ;
+			QString identityAgent ;
 			QStringList mountOptions ;
 			QStringList createOptions ;
 			QString keyFile ;
@@ -496,10 +502,12 @@ public:
 			bool likeSsh ;
 			bool autoCreatesMountPoint ;
 			bool autoDeletesMountPoint ;
+			bool usesOnlyMountPoint ;
 
 			QByteArray passwordFormat ;
+			QString displayName ;
 			QString releaseURL ;
-			QString minimumVersion ;
+			QString versionMinimum ;
 			QString reverseString ;
 			QString idleString ;
 			QString executableName ;
@@ -543,6 +551,8 @@ public:
 			QStringList fuseOptions ;
 		} ;
 
+		static QString encodeMountPath( const QString& e ) ;
+
 		static void encodeSpecialCharacters( QString& ) ;
 		static void decodeSpecialCharacters( QString& ) ;
 
@@ -566,6 +576,9 @@ public:
 		bool likeSsh() const ;
 		bool autoCreatesMountPoint() const ;
 		bool autoDeletesMountPoint() const ;
+		bool requiresAPassword() const ;
+		bool requiresNoPassword() const ;
+		bool usesOnlyMountPoint() const ;
 
 		engines::engine::status notFoundCode() const ;
 
@@ -589,6 +602,8 @@ public:
 		const QString& releaseURL() const ;
 		const QString& executableName() const ;
 		const QString& name() const ;
+		const QString& displayName() const ;
+		const QString& uiName() const ;
 		const QString& configFileName() const ;
 		const QString& keyFileArgument() const ;
 		const QString& mountControlStructure() const ;
@@ -600,17 +615,17 @@ public:
 		const QString& windowsInstallPathRegistryValue() const ;
 		const QString& windowsExecutableFolderPath() const ;
 
-		engine::engine::error errorCode( const QString& ) const ;
-
 		QByteArray setPassword( const QByteArray& ) const ;
 
 		engine( BaseOptions ) ;
 
 		virtual ~engine() ;
 
+		virtual engine::engine::error errorCode( const QString& ) const ;
+
 		virtual void updateVolumeList( const engines::engine::cmdArgsList& ) const ;
 
-		virtual QStringList mountInfo( const QStringList& ) const ;
+		virtual volumeInfo::List mountInfo( const volumeInfo::List& ) const ;
 
 		virtual Task::future< QString >& volumeProperties( const QString& cipherFolder,
 								   const QString& mountPoint ) const ;
@@ -640,7 +655,7 @@ public:
 
 		virtual const QProcessEnvironment& getProcessEnvironment() const ;
 
-		virtual bool requiresPolkit() const ;		
+		virtual bool requiresPolkit() const ;
 
 		virtual args command( const QByteArray& password,
 				      const engines::engine::cmdArgsList& args,
@@ -702,7 +717,7 @@ public:
 					}
 
 					return false ;
-				}			
+				}
 				const QStringList& get() const
 				{
 					return m_options ;
@@ -730,7 +745,7 @@ public:
 			public:
 				fuseOptions( QStringList& m ) : Options( m )
 				{
-				}				
+				}
 			} ;
 
 			class exeOptions : public Options
@@ -786,7 +801,7 @@ public:
 	engines() ;
 	static const engines& instance() ;
 	bool atLeastOneDealsWithFiles() const ;
-	QStringList mountInfo( const QStringList& ) const ;
+	volumeInfo::List mountInfo( const volumeInfo::List& ) const ;
 	QStringList enginesWithNoConfigFile() const ;
 	QStringList enginesWithConfigFile() const ;
 	const std::vector< engines::engine::Wrapper >& supportedEngines() const ;
@@ -826,7 +841,7 @@ public:
 	                                     const QString& configPath = QString() ) const ;
 	const engine& getUnKnown() const ;
 	const engine& getByName( const QString& e ) const ;
-	const engine& getByFuseName( const QString& e ) const ;
+	const engine& getByFsName( const QString& e ) const ;
 private:
 	std::vector< std::unique_ptr< engines::engine > > m_backends ;
 	std::vector< engines::engine::Wrapper > m_backendWrappers ;

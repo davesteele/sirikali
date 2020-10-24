@@ -24,9 +24,13 @@ class sshfs : public engines::engine
 public:
 	sshfs() ;
 
+	bool requiresAPassword( const engines::engine::cmdArgsList& ) const override ;
+
 	engine::engine::status passAllRequirenments( const engines::engine::cmdArgsList& opt ) const override ;
 
 	const QProcessEnvironment& getProcessEnvironment() const override ;
+
+	engine::engine::error errorCode( const QString& ) const override ;
 
 	engines::engine::status errorCode( const QString& e,int s ) const override ;
 
@@ -42,4 +46,5 @@ public:
 private:
 	mutable QProcessEnvironment m_environment ;
 	const engines::versionGreaterOrEqual m_version_greater_or_equal_minimum ;
+	const QString m_sshAuthSock ;
 } ;

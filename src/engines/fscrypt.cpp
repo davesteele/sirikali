@@ -28,7 +28,7 @@
 #include "custom.h"
 
 struct mountInfo{
-	const QStringList& mountInfo ;
+	const volumeInfo::List& mountInfo ;
 	const QStringList& mountedVolumes ;
 	const QStringList& fuseNames ;
 	const QString& exe ;
@@ -63,34 +63,32 @@ static QStringList _encrypted_volumes( const QString& list )
 	return l ;
 }
 
-static QString _get_fs_mode( const QStringList& s,const QString& m )
+static QString _get_fs_mode( const volumeInfo::List& s,const QString& m )
 {
 	for( const auto& it : s ){
 
-		auto a = utility::split( it,' ' ) ;
+		if( m.startsWith( it.mountPoint ) ){
 
-		if( a.size() > 6 ){
-
-			if( m.startsWith( a.at( 4 ) ) ){
-
-				return a.at( 5 ).mid( 0,2 ) ;
-			}
+			return it.mode ;
 		}
 	}
 
-	return "-" ;
+	return "rw" ;
 }
 
-static utility::Task _run( const QString& cmd,const QStringList& list )
+static utility::Task _run( const QString& cmd,const QStringList& list,bool debug = false )
 {
-	auto exe = cmd ;
+	if( debug ){
 
-	for( const auto& it : list ){
+		auto exe = cmd ;
 
-		exe += " \"" + it + "\"" ;
+		for( const auto& it : list ){
+
+			exe += " \"" + it + "\"" ;
+		}
+
+		utility::debug() << exe ;
 	}
-
-	utility::debug() << exe ;
 
 	return utility::unwrap( utility::Task::run( cmd,list ) ) ;
 }
@@ -158,9 +156,9 @@ static QString _property( const QString& exe,const QString& m,const QString& opt
 }
 
 template< typename Function >
-static QStringList _mountInfo( const mountInfo& e,Function removeEntry )
+static volumeInfo::List _mountInfo( const mountInfo& e,Function removeEntry )
 {
-	QStringList l ;
+	volumeInfo::List l ;
 
 	const auto& a = e.fuseNames.at( 0 ) ;
 	const auto& b = e.fuseNames.at( 1 ) ;
@@ -177,11 +175,11 @@ static QStringList _mountInfo( const mountInfo& e,Function removeEntry )
 
 			if( s == "Yes" ){
 
-				l.append( mountinfo::mountProperties( it,md,a,it ) ) ;
+				l.emplace_back( it,it,a,md ) ;
 
 			}else if( s.startsWith( "Partially" ) ){
 
-				l.append( mountinfo::mountProperties( it,md,b,it ) ) ;
+				l.emplace_back( it,it,b,md ) ;
 			}else{
 				removeEntry( it ) ;
 			}
@@ -302,6 +300,7 @@ static engines::engine::BaseOptions _setOptions()
 	s.backendRunsInBackGround     = true ;
 	s.autoCreatesMountPoint       = false ;
 	s.autoDeletesMountPoint       = false ;
+	s.usesOnlyMountPoint          = false ;
 	s.likeSsh               = false ;
 	s.requiresPolkit        = false ;
 	s.customBackend         = false ;
@@ -364,7 +363,7 @@ engines::engine::status fscrypt::unmount( const engines::engine::unMount& e ) co
 
 		if( s.success() ){
 
-			m_unlockedVolumeManager.removeEntry( mountinfo::encodeMountPath( e.mountPoint ) ) ;
+			m_unlockedVolumeManager.removeEntry( engines::engine::encodeMountPath( e.mountPoint ) ) ;
 
 			return engines::engine::status::success ;
 
@@ -377,7 +376,7 @@ engines::engine::status fscrypt::unmount( const engines::engine::unMount& e ) co
 	return engines::engine::status::failedToUnMount ;
 }
 
-QStringList fscrypt::mountInfo( const QStringList& a ) const
+volumeInfo::List fscrypt::mountInfo( const volumeInfo::List& a ) const
 {
 	auto exe = this->executableFullPath() ;
 
@@ -556,11 +555,17 @@ static QString _setOption()
 fscrypt::unlockedVolumeList::unlockedVolumeList() :
 	m_configFilePath( _setOption() )
 {
+	if( utility::pathNotExists( m_configFilePath ) ){
+
+		this->updateList( QStringList() ) ;
+	}
 }
 
 QStringList fscrypt::unlockedVolumeList::getList() const
 {
-	SirikaliJson json( QFile( m_configFilePath ),utility::jsonLogger() ) ;
+	utility::logger logger ;
+
+	SirikaliJson json( QFile( m_configFilePath ),logger.function() ) ;
 
 	if( json.passed() ){
 
@@ -572,7 +577,9 @@ QStringList fscrypt::unlockedVolumeList::getList() const
 
 void fscrypt::unlockedVolumeList::updateList( const QStringList& e )
 {
-	SirikaliJson json( utility::jsonLogger() ) ;
+	utility::logger logger ;
+
+	SirikaliJson json( logger.function() ) ;
 
 	json[ m_keyName ] = e ;
 
@@ -588,7 +595,7 @@ void fscrypt::unlockedVolumeList::addEntry( const QString& e )
 {
 	auto a = this->getList() ;
 
-	a.append( mountinfo::encodeMountPath( e ) ) ;
+	a.append( engines::engine::encodeMountPath( e ) ) ;
 
 	this->updateList( a ) ;
 }

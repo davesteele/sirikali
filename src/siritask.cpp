@@ -486,7 +486,7 @@ engines::engine::cmdStatus siritask::encryptedFolderCreate( const siritask::crea
 {
 	if( utility::platformIsWindows() ){
 
-		if( utility::runningOnGUIThread() ){
+		if( utility::miscOptions::instance().runningOnGUIThread() ){
 
 			return _create( e ) ;
 		}else{
@@ -517,6 +517,10 @@ static void _run_command_on_mount( const siritask::mount& e )
 
 		Task::exec( [ = ](){
 
+			utility::logger logger ;
+
+			logger.showText( s,opts ) ;
+
 			auto r = [ & ](){
 
 				if( settings::instance().allowExternalToolsToReadPasswords() ){
@@ -534,7 +538,7 @@ static void _run_command_on_mount( const siritask::mount& e )
 				}
 			}() ;
 
-			utility::logCommandOutPut( r,s,opts ) ;
+			logger.showText( r ) ;
 		} ) ;
 	}
 }
@@ -550,7 +554,7 @@ engines::engine::cmdStatus siritask::encryptedFolderMount( const siritask::mount
 
 		if( utility::platformIsWindows() ){
 
-			if( utility::runningOnGUIThread() ){
+			if( utility::miscOptions::instance().runningOnGUIThread() ){
 
 				return _mount( e ) ;
 			}else{

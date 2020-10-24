@@ -41,12 +41,12 @@ debugWindow::debugWindow( QWidget * parent ) :
 		this->Hide() ;
 	} ) ;
 
-	utility::setDebugWindow( this ) ;
+	utility::miscOptions::instance().setDebugWindow( this ) ;
 }
 
 debugWindow::~debugWindow()
 {
-	delete  m_ui ;
+	delete m_ui ;
 }
 
 void debugWindow::Show()
@@ -65,6 +65,9 @@ void debugWindow::UpdateOutPutSlot( const QString& e,bool s )
 
 		auto s = m_ui->textEdit->toPlainText() ;
 		m_ui->textEdit->setText( s + "\n" + e ) ;
+		auto cursor = m_ui->textEdit->textCursor() ;
+		cursor.movePosition( QTextCursor::End ) ;
+		m_ui->textEdit->setTextCursor( cursor ) ;
 	}
 }
 

@@ -7,37 +7,37 @@
         "autorefreshOnMountUnMount": true,
         "backendRequireMountPath": true,
         "backendTimeout": 0,
-        "configFileArgument": "",
-        "configFileNames": [],
+        "configFileArgument": "-cfg %{cipherFolder}/%{configFileName}",
+        "configFileNames": [
+                "utahfs.yaml"
+        ],
         "createControlStructure": "",
         "displayName":"",
-        "executableName": "fuseiso",
+        "executableName": "utahfs-client",
         "failedToMountTextList": [],
-        "fileExtensions": [
-                 ".iso"," .nrg"," .bin"," .mdf",".img"
-        ],
+        "fileExtensions": [],
         "fuseNames": [
-                "fuse.fuseiso"
+                "fuse.utahfs"
         ],
         "idleString": "--idle %{timeout}",
         "keyFileArgument": "--keyfile %{keyfile}",
         "likeSsh": false,
-        "mountControlStructure": "%{mountOptions} %{cipherFolder} %{mountPoint} %{fuseOpts}",
+        "mountControlStructure": "%{mountOptions} -mount %{mountPoint}",
         "names": [
-                "fuseiso"
+                "utahfs"
         ],
         "passwordFormat": "%{password}",
         "requiresAPassword": false,
         "reverseString": "",
-        "runsInBackGround": true,
-        "setsCipherPath": true,
+        "runsInBackGround": false,
+        "setsCipherPath": false,
         "sshOptions": "idmap=user,StrictHostKeyChecking=no",
         "takesTooLongToUnlock": false,
         "unMountCommand": [],
-        "versionArgumentString": "--version",
+        "versionArgumentString": "",
         "versionMinimum": "",
         "versionOutputStdOut": true,
-        "versionStringTextPosition": [ 0,1 ],
+        "versionStringTextPosition": [],
         "volumePropertiesCommands": [],
         "windowsExecutableFolderPath": "",
         "windowsInstallPathRegistryKey": "",

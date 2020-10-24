@@ -76,9 +76,62 @@ static QString _create_entry_path( const favorites::entry& e,bool newFormat )
 	}
 }
 
+static void _update_favorites( favorites::entry& m )
+{
+	const auto mOpts = utility::split( m.mountOptions,',' ) ;
+
+	QStringList ss ;
+
+	auto _remove_quotes = []( QString s ){
+
+		if( s.startsWith( '"' ) ){
+
+			s = s.mid( 1 ) ;
+		}
+
+		if( s.endsWith( '"' ) ){
+
+			s = utility::removeLast( s,1 ) ;
+		}
+
+		return s ;
+	} ;
+
+	for( const auto& it : mOpts ){
+
+		if( it.startsWith( "IdentityAgent=" ) ){
+
+			m.identityAgent = _remove_quotes( it.mid( 14 ) ) ;
+
+		}else if( it.startsWith( "IdentityFile=" ) ){
+
+			m.identityFile = _remove_quotes( it.mid( 13 ) ) ;
+
+		}else if( it.contains( "UseNetworkDrive=no",Qt::CaseInsensitive ) ){
+
+			m.reverseMode = false ;
+
+		}else if( it.contains( "UseNetworkDrive=yes",Qt::CaseInsensitive ) ){
+
+			m.reverseMode = true ;
+
+		}else if( !it.isEmpty() ){
+
+			ss.append( it ) ;
+		}
+	}
+
+	if( !ss.isEmpty() ){
+
+		m.mountOptions = ss.join( ',' ) ;
+	}
+}
+
 static favorites::entry _favorites( const QString& path )
 {
-	SirikaliJson json( QFile( path ),utility::jsonLogger() ) ;
+	utility::logger logger ;
+
+	SirikaliJson json( QFile( path ),logger.function() ) ;
 
 	favorites::entry m ;
 
@@ -92,14 +145,18 @@ static favorites::entry _favorites( const QString& path )
 		m.mountPointPath       = json.getString( "mountPointPath" ) ;
 		m.configFilePath       = json.getString( "configFilePath" ) ;
 		m.idleTimeOut          = json.getString( "idleTimeOut" ) ;
-		m.mountOptions         = json.getString( "mountOptions" ) ;
 		m.preMountCommand      = json.getString( "preMountCommand" ) ;
 		m.postMountCommand     = json.getString( "postMountCommand" ) ;
 		m.preUnmountCommand    = json.getString( "preUnmountCommand" ) ;
 		m.postUnmountCommand   = json.getString( "postUnmountCommand" ) ;
 		m.keyFile              = json.getString( "keyFilePath" ) ;
+		m.identityFile         = json.getString( "identityFile" ) ;
+		m.identityAgent        = json.getString( "identityAgent" ) ;
+		m.mountOptions         = json.getString( "mountOptions" ) ;
 
 		m.password             = json.getByteArray( "password" ) ;
+
+		_update_favorites( m ) ;
 
 		favorites::triState::readTriState( json,m.readOnlyMode,"mountReadOnly" ) ;
 		favorites::triState::readTriState( json,m.autoMount,"autoMountVolume" ) ;
@@ -152,7 +209,9 @@ favorites::error favorites::add( const favorites::entry& e )
 
 	auto a = _create_path( m.value(),e,true ) ;
 
-	SirikaliJson json( utility::jsonLogger() ) ;
+	utility::logger logger ;
+
+	SirikaliJson json( logger.function() ) ;
 
 	json[ "volumePath" ]           = e.volumePath ;
 	json[ "mountPointPath" ]       = e.mountPointPath ;
@@ -166,6 +225,9 @@ favorites::error favorites::add( const favorites::entry& e )
 	json[ "postUnmountCommand" ]   = e.postUnmountCommand ;
 	json[ "reverseMode" ]          = e.reverseMode ;
 	json[ "volumeNeedNoPassword" ] = e.volumeNeedNoPassword ;
+	json[ "identityAgent" ]        = e.identityAgent ;
+	json[ "identityFile" ]         = e.identityFile ;
+
 	json[ "password" ]             = e.password ;
 
 	favorites::triState::writeTriState( json,e.readOnlyMode,"mountReadOnly" ) ;
@@ -177,6 +239,17 @@ favorites::error favorites::add( const favorites::entry& e )
 		return error::ENTRY_ALREADY_EXISTS ;
 	}else{
 		if( json.passed() && json.toFile( a ) ){
+
+			while( true ){
+
+				if( utility::pathExists( a ) ){
+
+					break ;
+				}else{
+					utility::debug() << "Waiting for a file to show up to the file system" ;
+					utility::Task::suspendForOneSecond() ;
+				}
+			}
 
 			this->reload() ;
 			return error::SUCCESS ;
@@ -254,12 +327,6 @@ const favorites::entry& favorites::readFavorite( const QString& volumePath,
 	return m_empty ;
 }
 
-favorites::temporaryFavoriteEntries& favorites::getTmpFavoriteEntries()
-{
-	m_tmpFe.clear() ;
-	return m_tmpFe ;
-}
-
 void favorites::replaceFavorite( const favorites::entry& old,const favorites::entry& New )
 {
 	this->removeFavoriteEntry( old ) ;
@@ -300,16 +367,4 @@ favorites::entry::entry()
 favorites::entry::entry( const QString& e,const QString& mountPath ) :
 	volumePath( e ),mountPointPath( mountPath )
 {
-}
-
-void favorites::temporaryFavoriteEntries::clear()
-{
-	m_tmpFavoriteList.clear() ;
-	m_iter = m_tmpFavoriteList.before_begin() ;
-}
-
-const favorites::entry& favorites::temporaryFavoriteEntries::add( favorites::entry e )
-{
-	m_iter = m_tmpFavoriteList.emplace_after( m_iter,std::move( e ) ) ;
-	return *m_iter ;
 }

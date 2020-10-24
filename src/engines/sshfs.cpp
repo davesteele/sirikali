@@ -40,10 +40,11 @@ static engines::engine::BaseOptions _setOptions()
 	s.autorefreshOnMountUnMount   = true ;
 	s.backendRequireMountPath     = true ;
 	s.backendRunsInBackGround     = true ;
+	s.usesOnlyMountPoint          = false ;
 	s.likeSsh               = true ;
 	s.requiresPolkit        = false ;
 	s.customBackend         = false ;
-	s.requiresAPassword     = false ;
+	s.requiresAPassword     = true ;
 	s.hasConfigFile         = false ;
 	s.autoMountsOnCreate    = true ;
 	s.hasGUICreateOptions   = false ;
@@ -69,8 +70,8 @@ static engines::engine::BaseOptions _setOptions()
 		s.autoCreatesMountPoint = true ;
 		s.autoDeletesMountPoint = true ;
 
-		s.minimumVersion = "3.5.2" ;
-		s.sshOptions = "create_file_umask=0000,create_dir_umask=0000,umask=0000,idmap=user,StrictHostKeyChecking=no,UseNetworkDrive=no" ;
+		s.versionMinimum = "3.5.2" ;
+		s.sshOptions = "create_file_umask=0000,create_dir_umask=0000,umask=0000,idmap=user,StrictHostKeyChecking=no" ;
 	}else{
 		s.autoCreatesMountPoint = false ;
 		s.autoDeletesMountPoint = false ;
@@ -83,8 +84,19 @@ static engines::engine::BaseOptions _setOptions()
 sshfs::sshfs() :
 	engines::engine( _setOptions() ),
 	m_environment( engines::engine::getProcessEnvironment() ),
-	m_version_greater_or_equal_minimum( false,*this,this->minimumVersion() )
+	m_version_greater_or_equal_minimum( false,*this,this->minimumVersion() ),
+	m_sshAuthSock( qgetenv( "SSH_AUTH_SOCK" ) )
 {
+}
+
+bool sshfs::requiresAPassword( const engines::engine::cmdArgsList& e ) const
+{
+	if( !m_sshAuthSock.isEmpty() || !e.identityFile.isEmpty() || !e.identityAgent.isEmpty() ){
+
+		return false ;
+	}else{
+		return engines::engine::requiresAPassword( e ) ;
+	}
 }
 
 engines::engine::status sshfs::passAllRequirenments( const engines::engine::cmdArgsList& opt ) const
@@ -104,7 +116,7 @@ engines::engine::status sshfs::passAllRequirenments( const engines::engine::cmdA
 			return engines::engine::status::backEndFailedToMeetMinimumRequirenment ;
 		}
 	}else{
-		return engines::engine::status::success ;
+		return engines::engine::passAllRequirenments( opt ) ;
 	}
 }
 
@@ -122,17 +134,10 @@ void sshfs::updateOptions( engines::engine::commandOptions& opts,
 	auto fuseOptions = opts.fuseOpts() ;
 	auto exeOptions  = opts.exeOptions() ;
 
-	if( !args.key.isEmpty() ){
-
-		fuseOptions.add( "password_stdin" ) ;
-	}
-
 	if( fuseOptions.doesNotContain( "StrictHostKeyChecking=" ) ){
 
 		fuseOptions.add( "StrictHostKeyChecking=no" ) ;
 	}
-
-	auto s = fuseOptions.extractStartsWith( "UseNetworkDrive=" ) ;
 
 	if( utility::platformIsWindows() ){
 
@@ -140,38 +145,50 @@ void sshfs::updateOptions( engines::engine::commandOptions& opts,
 
 		if( utility::isDriveLetter( args.mountPoint ) ){
 
-			if( !exeOptions.contains( "--VolumePrefix=" ) ){
+			if( !exeOptions.contains( "--VolumePrefix=" ) &&
+					args.boolOptions.unlockInReverseMode ){
 
-				if( utility::endsWithAtLeastOne( s,"yes","Yes","YES" ) ){
-
-					auto x = args.cipherFolder ;
-					x.replace( ":",";" ) ;
-					exeOptions.add ( "--VolumePrefix=\\mysshfs\\" + x ) ;
-				}
+				auto x = args.cipherFolder ;
+				x.replace( ":",";" ) ;
+				exeOptions.add( "--VolumePrefix=\\mysshfs\\" + x ) ;
 			}
 		}
 	}
 
-	if( fuseOptions.contains( "IdentityAgent" ) ){
+	if( args.key.isEmpty() ){
 
-		auto m = "IdentityAgent=" ;
+		fuseOptions.add( "PreferredAuthentications=publickey" ) ;
 
-		auto n = fuseOptions.extractStartsWith( m ).replace( m,"" ) ;
+		auto _set_identity_agent = [ & ](){
 
-		m_environment.insert( "SSH_AUTH_SOCK",n ) ;
+			if( args.identityAgent.isEmpty() ){
 
-		utility::debug() << "Sshfs: Setting Env Variable Of: SSH_AUTH_SOCK=" + n ;
-	}else{
-		auto m = qgetenv( "SSH_AUTH_SOCK" ) ;
+				if( m_sshAuthSock.isEmpty() ){
 
-		if( m.isEmpty() ){
+					utility::debug() << "Sshfs: identityAgent Not Set" ;
+					m_environment.remove( "SSH_AUTH_SOCK" ) ;
+				}else{
+					utility::debug() << "Sshfs: From Env, Setting Env Variable Of: SSH_AUTH_SOCK=" + m_sshAuthSock ;
 
-			m_environment.remove( "SSH_AUTH_SOCK" ) ;
+					m_environment.insert( "SSH_AUTH_SOCK",m_sshAuthSock ) ;
+				}
+			}else{
+				utility::debug() << "Sshfs: Setting Env Variable Of: SSH_AUTH_SOCK=" + args.identityAgent ;
+				m_environment.insert( "SSH_AUTH_SOCK",args.identityAgent ) ;
+			}
+		} ;
+
+		if( args.identityFile.isEmpty() ){
+
+			_set_identity_agent() ;
 		}else{
-			utility::debug() << "Sshfs: Setting Env Variable Of: SSH_AUTH_SOCK=" + m ;
+			_set_identity_agent() ;
 
-			m_environment.insert( "SSH_AUTH_SOCK",m ) ;
+			fuseOptions.add( "IdentityFile=" + args.identityFile ) ;
 		}
+	}else{
+		fuseOptions.add( "PreferredAuthentications=password" ) ;
+		fuseOptions.add( "password_stdin" ) ;
 	}
 }
 
@@ -180,6 +197,16 @@ engines::engine::args sshfs::command( const QByteArray& password,
 				      bool create ) const
 {
 	return custom::set_command( *this,password,args,create ) ;
+}
+
+engines::engine::error sshfs::errorCode( const QString& e ) const
+{
+	if( e.contains( "invalid argument" ) ){
+
+		return engines::engine::error::Failed ;
+	}else{
+		return engines::engine::errorCode( e ) ;
+	}
 }
 
 engines::engine::status sshfs::errorCode( const QString& e,int s ) const

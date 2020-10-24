@@ -23,7 +23,7 @@
     </rect>
    </property>
    <property name="currentIndex">
-    <number>2</number>
+    <number>1</number>
    </property>
    <widget class="QWidget" name="FavoritesList">
     <attribute name="title">
@@ -37,6 +37,9 @@
        <width>271</width>
        <height>441</height>
       </rect>
+     </property>
+     <property name="editTriggers">
+      <set>QAbstractItemView::NoEditTriggers</set>
      </property>
      <property name="selectionMode">
       <enum>QAbstractItemView::NoSelection</enum>
@@ -491,7 +494,7 @@
         <property name="geometry">
          <rect>
           <x>10</x>
-          <y>20</y>
+          <y>60</y>
           <width>311</width>
           <height>71</height>
          </rect>
@@ -510,7 +513,7 @@
         <property name="geometry">
          <rect>
           <x>330</x>
-          <y>40</y>
+          <y>80</y>
           <width>321</width>
           <height>31</height>
          </rect>
@@ -520,7 +523,7 @@
         <property name="geometry">
          <rect>
           <x>650</x>
-          <y>40</y>
+          <y>80</y>
           <width>31</width>
           <height>33</height>
          </rect>
@@ -529,11 +532,11 @@
          <string/>
         </property>
        </widget>
-       <widget class="QLabel" name="labelDeviceAddress">
+       <widget class="QLabel" name="labelMountPointPrefix">
         <property name="geometry">
          <rect>
           <x>10</x>
-          <y>80</y>
+          <y>120</y>
           <width>311</width>
           <height>31</height>
          </rect>
@@ -552,7 +555,7 @@
         <property name="geometry">
          <rect>
           <x>330</x>
-          <y>80</y>
+          <y>120</y>
           <width>321</width>
           <height>31</height>
          </rect>
@@ -562,7 +565,7 @@
         <property name="geometry">
          <rect>
           <x>650</x>
-          <y>80</y>
+          <y>120</y>
           <width>31</width>
           <height>33</height>
          </rect>
@@ -575,7 +578,7 @@
         <property name="geometry">
          <rect>
           <x>10</x>
-          <y>120</y>
+          <y>160</y>
           <width>311</width>
           <height>31</height>
          </rect>
@@ -594,7 +597,7 @@
         <property name="geometry">
          <rect>
           <x>330</x>
-          <y>120</y>
+          <y>160</y>
           <width>321</width>
           <height>31</height>
          </rect>
@@ -604,7 +607,7 @@
         <property name="geometry">
          <rect>
           <x>650</x>
-          <y>120</y>
+          <y>160</y>
           <width>31</width>
           <height>33</height>
          </rect>
@@ -617,7 +620,7 @@
         <property name="geometry">
          <rect>
           <x>10</x>
-          <y>160</y>
+          <y>200</y>
           <width>311</width>
           <height>31</height>
          </rect>
@@ -636,7 +639,7 @@
         <property name="geometry">
          <rect>
           <x>330</x>
-          <y>160</y>
+          <y>200</y>
           <width>321</width>
           <height>31</height>
          </rect>
@@ -646,7 +649,7 @@
         <property name="geometry">
          <rect>
           <x>650</x>
-          <y>160</y>
+          <y>200</y>
           <width>31</width>
           <height>33</height>
          </rect>
@@ -659,7 +662,7 @@
         <property name="geometry">
          <rect>
           <x>10</x>
-          <y>200</y>
+          <y>240</y>
           <width>311</width>
           <height>71</height>
          </rect>
@@ -678,7 +681,7 @@
         <property name="geometry">
          <rect>
           <x>330</x>
-          <y>200</y>
+          <y>240</y>
           <width>321</width>
           <height>71</height>
          </rect>
@@ -687,17 +690,17 @@
        <widget class="QLabel" name="label_12">
         <property name="geometry">
          <rect>
-          <x>10</x>
-          <y>270</y>
-          <width>311</width>
-          <height>31</height>
+          <x>400</x>
+          <y>310</y>
+          <width>301</width>
+          <height>41</height>
          </rect>
         </property>
         <property name="text">
          <string>Auto Mount Volume</string>
         </property>
         <property name="alignment">
-         <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+         <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
         </property>
         <property name="wordWrap">
          <bool>true</bool>
@@ -706,10 +709,10 @@
        <widget class="QCheckBox" name="cbAutoMount">
         <property name="geometry">
          <rect>
-          <x>330</x>
-          <y>270</y>
+          <x>370</x>
+          <y>310</y>
           <width>21</width>
-          <height>31</height>
+          <height>41</height>
          </rect>
         </property>
         <property name="text">
@@ -719,8 +722,8 @@
        <widget class="QLabel" name="label_13">
         <property name="geometry">
          <rect>
-          <x>10</x>
-          <y>290</y>
+          <x>400</x>
+          <y>340</y>
           <width>311</width>
           <height>41</height>
          </rect>
@@ -729,7 +732,7 @@
          <string>Volume Does Not Use A Password</string>
         </property>
         <property name="alignment">
-         <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+         <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
         </property>
         <property name="wordWrap">
          <bool>true</bool>
@@ -738,8 +741,8 @@
        <widget class="QCheckBox" name="cbVolumeNoPassword">
         <property name="geometry">
          <rect>
-          <x>330</x>
-          <y>290</y>
+          <x>370</x>
+          <y>340</y>
           <width>21</width>
           <height>41</height>
          </rect>
@@ -752,7 +755,7 @@
         <property name="geometry">
          <rect>
           <x>10</x>
-          <y>320</y>
+          <y>310</y>
           <width>311</width>
           <height>41</height>
          </rect>
@@ -771,7 +774,7 @@
         <property name="geometry">
          <rect>
           <x>330</x>
-          <y>320</y>
+          <y>310</y>
           <width>21</width>
           <height>41</height>
          </rect>
@@ -784,9 +787,9 @@
         <property name="geometry">
          <rect>
           <x>10</x>
-          <y>350</y>
+          <y>340</y>
           <width>311</width>
-          <height>31</height>
+          <height>41</height>
          </rect>
         </property>
         <property name="text">
@@ -803,9 +806,9 @@
         <property name="geometry">
          <rect>
           <x>330</x>
-          <y>350</y>
+          <y>340</y>
           <width>21</width>
-          <height>31</height>
+          <height>41</height>
          </rect>
         </property>
         <property name="text">
@@ -826,6 +829,54 @@
         </property>
         <property name="text">
          <string/>
+        </property>
+       </widget>
+       <widget class="QLineEdit" name="lineEditSshPortNumber">
+        <property name="geometry">
+         <rect>
+          <x>330</x>
+          <y>40</y>
+          <width>321</width>
+          <height>31</height>
+         </rect>
+        </property>
+       </widget>
+       <widget class="QLabel" name="labelPortyNumber">
+        <property name="geometry">
+         <rect>
+          <x>10</x>
+          <y>40</y>
+          <width>311</width>
+          <height>31</height>
+         </rect>
+        </property>
+        <property name="text">
+         <string>Ssh Port Number</string>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+        </property>
+       </widget>
+       <widget class="QLabel" name="labelFailedToCreateFavorite">
+        <property name="geometry">
+         <rect>
+          <x>0</x>
+          <y>0</y>
+          <width>711</width>
+          <height>381</height>
+         </rect>
+        </property>
+        <property name="autoFillBackground">
+         <bool>true</bool>
+        </property>
+        <property name="text">
+         <string>Entry Already Exist</string>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignCenter</set>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
         </property>
        </widget>
       </widget>
@@ -1003,6 +1054,19 @@
        </widget>
       </widget>
      </widget>
+     <widget class="QPushButton" name="pbFailedToCreateFavorite">
+      <property name="geometry">
+       <rect>
+        <x>200</x>
+        <y>430</y>
+        <width>341</width>
+        <height>33</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string>OK</string>
+      </property>
+     </widget>
     </widget>
    </widget>
    <widget class="QWidget" name="ManageVolumeKeys">
@@ -1160,7 +1224,7 @@
        <rect>
         <x>260</x>
         <y>340</y>
-        <width>421</width>
+        <width>411</width>
         <height>31</height>
        </rect>
       </property>
@@ -1189,7 +1253,7 @@
        <rect>
         <x>260</x>
         <y>400</y>
-        <width>421</width>
+        <width>411</width>
         <height>31</height>
        </rect>
       </property>
@@ -1202,7 +1266,7 @@
        <rect>
         <x>260</x>
         <y>432</y>
-        <width>421</width>
+        <width>411</width>
         <height>31</height>
        </rect>
       </property>
@@ -1213,7 +1277,20 @@
      <widget class="QPushButton" name="pbVolumePath">
       <property name="geometry">
        <rect>
-        <x>680</x>
+        <x>670</x>
+        <y>340</y>
+        <width>31</width>
+        <height>31</height>
+       </rect>
+      </property>
+      <property name="text">
+       <string/>
+      </property>
+     </widget>
+     <widget class="QPushButton" name="pbVolumePathFromFavorites">
+      <property name="geometry">
+       <rect>
+        <x>700</x>
         <y>340</y>
         <width>31</width>
         <height>31</height>
@@ -1258,7 +1335,7 @@
      <widget class="QCheckBox" name="cbShowPassword">
       <property name="geometry">
        <rect>
-        <x>680</x>
+        <x>670</x>
         <y>400</y>
         <width>31</width>
         <height>31</height>
@@ -1274,7 +1351,7 @@
         <x>-10</x>
         <y>0</y>
         <width>761</width>
-        <height>471</height>
+        <height>481</height>
        </rect>
       </property>
       <property name="autoFillBackground">

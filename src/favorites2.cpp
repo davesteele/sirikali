@@ -41,10 +41,9 @@ Task::future< void >& favorites2::deleteKey( secrets::wallet& wallet,const QStri
 
 Task::future< bool >& favorites2::addKey( secrets::wallet& wallet,
 					  const QString& id,
-					  const QString& key,
-					  const QString& comment )
+					  const QString& key )
 {
-	return Task::run( [ &wallet,id,key,comment ](){
+	return Task::run( [ &wallet,id,key ](){
 
 		if( wallet->addKey( id,key ) ){
 
@@ -72,15 +71,21 @@ favorites2::favorites2( QWidget * parent,
 {
 	m_ui->setupUi( this ) ;
 
+	this->installEventFilter( this ) ;
+
 	this->setFont( parent->font() ) ;
 
 	this->setFixedSize( this->size() ) ;
 
 	m_settings.setParent( parent,&m_parentWidget,this ) ;
 
-	auto table = m_ui->tableWidget ;
+	m_ui->pbFailedToCreateFavorite->setVisible( false ) ;
 
-	table->horizontalHeader()->setStretchLastSection( true ) ;
+	m_ui->labelFailedToCreateFavorite->setVisible( false ) ;
+
+	m_ui->lineEditVolumeType->setEnabled( false ) ;
+
+	m_ui->tableWidget->horizontalHeader()->setStretchLastSection( true ) ;
 
 	m_ui->pbVolumePath->setIcon( QIcon( ":/sirikali" ) ) ;
 
@@ -105,7 +110,18 @@ favorites2::favorites2( QWidget * parent,
 
 		connect( m,&QMenu::triggered,[ this ]( QAction * ac ){
 
-			m_ui->lineEditVolumeType->setText( ac->objectName() ) ;
+			const auto& m = ac->objectName() ;
+
+			m_ui->lineEditVolumeType->setText( m ) ;
+
+			const auto& engine = engines::instance().getByName( m ) ;
+
+			if( engine.known() && engine.likeSsh() ){
+
+				this->setUiLikeSsh( QString(),engine ) ;
+			}else{
+				this->setDefaultUI( engine ) ;
+			}
 		} ) ;
 
 		return m ;
@@ -148,9 +164,27 @@ favorites2::favorites2( QWidget * parent,
 		this->updateFavorite( false ) ;
 	} ) ;
 
+	m_ui->pbFolderPath->setObjectName( "FolderHandle" ) ;
+
 	connect( m_ui->pbFolderPath,&QPushButton::clicked,[ this ](){
 
-		this->folderPath() ;
+		if( m_ui->pbFolderPath->objectName() == "FolderHandle" ){
+
+			this->folderPath() ;
+		}else{
+			this->filePath() ;
+		}
+	} ) ;
+
+	connect( m_ui->pbFailedToCreateFavorite,&QPushButton::clicked,[ this ](){
+
+		m_ui->pbFailedToCreateFavorite->setVisible( false ) ;
+
+		m_ui->labelFailedToCreateFavorite->setVisible( false ) ;
+
+		m_ui->pbAdd->setEnabled( true ) ;
+
+		m_ui->pbAdd->setFocus() ;
 	} ) ;
 
 	connect( m_ui->tableWidgetWallet,&QTableWidget::customContextMenuRequested,[ this ]( QPoint s ){
@@ -165,39 +199,29 @@ favorites2::favorites2( QWidget * parent,
 		}
 	} ) ;
 
-	auto _setCommand = [ this ]( QLineEdit * lineEdit ){
-
-		auto path = this->getExistingFile( tr( "Select A Command Executable" ) ) ;
-
-		if( !path.isEmpty() ){
-
-			lineEdit->setText( path ) ;
-		}
-	} ;
-
 	connect( m_ui->tableWidgetWallet,&QTableWidget::currentItemChanged,[]( QTableWidgetItem * c,QTableWidgetItem * p ){
 
 		tablewidget::selectRow( c,p ) ;
 	} ) ;
 
-	connect( m_ui->pbPreMount,&QPushButton::clicked,[ = ](){
+	connect( m_ui->pbPreMount,&QPushButton::clicked,[ this ](){
 
-		_setCommand( m_ui->lineEditPreMount ) ;
+		this->setCommand( m_ui->lineEditPreMount ) ;
 	} ) ;
 
-	connect( m_ui->pbPreUnMount,&QPushButton::clicked,[ = ](){
+	connect( m_ui->pbPreUnMount,&QPushButton::clicked,[ this ](){
 
-		_setCommand( m_ui->lineEditPreUnMount ) ;
+		this->setCommand( m_ui->lineEditPreUnMount ) ;
 	} ) ;
 
-	connect( m_ui->pbPostMount,&QPushButton::clicked,[ = ](){
+	connect( m_ui->pbPostMount,&QPushButton::clicked,[ this ](){
 
-		_setCommand( m_ui->lineEditPostMount ) ;
+		this->setCommand( m_ui->lineEditPostMount ) ;
 	} ) ;
 
-	connect( m_ui->pbPostUnmount,&QPushButton::clicked,[ = ](){
+	connect( m_ui->pbPostUnmount,&QPushButton::clicked,[ this ](){
 
-		_setCommand( m_ui->lineEditPostUnmount ) ;
+		this->setCommand( m_ui->lineEditPostUnmount ) ;
 	} ) ;
 
 	connect( m_ui->pbEdit,&QPushButton::clicked,[ this ](){
@@ -271,15 +295,30 @@ favorites2::favorites2( QWidget * parent,
 		}
 	} ) ;
 
+	connect( &m_volPathFav,&QMenu::triggered,[ this ]( QAction * ac ){
+
+		m_ui->lineEditVolumePath->setText( ac->objectName() ) ;
+	} ) ;
+
+	connect( m_ui->pbVolumePathFromFavorites,&QPushButton::clicked,[ this ](){
+
+		m_volPathFav.exec() ;
+	} ) ;
+
 	using bk = LXQt::Wallet::BackEnd ;
 
 	m_ui->rbNone->setEnabled( true ) ;
 
-	m_ui->rbInternalWallet->setEnabled( LXQt::Wallet::backEndIsSupported( bk::internal ) ) ;
-	m_ui->rbKWallet->setEnabled( LXQt::Wallet::backEndIsSupported( bk::kwallet ) ) ;
-	m_ui->rbLibSecret->setEnabled( LXQt::Wallet::backEndIsSupported( bk::libsecret ) ) ;
-	m_ui->rbMacOSKeyChain->setEnabled( LXQt::Wallet::backEndIsSupported( bk::osxkeychain ) ) ;
-	m_ui->rbWindowsDPAPI->setEnabled( LXQt::Wallet::backEndIsSupported( bk::windows_dpapi ) ) ;
+	auto _set_supported = []( QRadioButton * rb,LXQt::Wallet::BackEnd e ){
+
+		rb->setEnabled( LXQt::Wallet::backEndIsSupported( e ) ) ;
+	} ;
+
+	_set_supported( m_ui->rbInternalWallet,bk::internal ) ;
+	_set_supported( m_ui->rbKWallet,bk::kwallet ) ;
+	_set_supported( m_ui->rbLibSecret,bk::libsecret ) ;
+	_set_supported( m_ui->rbMacOSKeyChain,bk::osxkeychain ) ;
+	_set_supported( m_ui->rbWindowsDPAPI,bk::windows_dpapi ) ;
 
 	auto walletBk = m_settings.autoMountBackEnd() ;
 
@@ -424,11 +463,11 @@ favorites2::favorites2( QWidget * parent,
 	if( utility::platformIsWindows() ){
 
 		utility::setWindowsMountPointOptions( this,m_ui->lineEditMountPath,m_ui->pbMountPointPath ) ;
-		m_ui->labelDeviceAddress->setText( tr( "Mount Point Path" ) ) ;
+		m_ui->labelMountPointPrefix->setText( tr( "Mount Point Path" ) ) ;
 	}else{
 		m_ui->pbMountPointPath->setIcon( QIcon( ":/folder.png" ) ) ;
 
-		m_ui->labelDeviceAddress->setText( tr( "Mount Point Prefix" ) ) ;
+		m_ui->labelMountPointPrefix->setText( tr( "Mount Point Prefix" ) ) ;
 
 		connect( m_ui->pbMountPointPath,&QPushButton::clicked, [ this ](){
 
@@ -441,14 +480,21 @@ favorites2::favorites2( QWidget * parent,
 		this->HideUI() ;
 	} ) ;
 
-	connect( table,&QTableWidget::itemClicked,[ this ]( QTableWidgetItem * item ){
+	connect( m_ui->tableWidget,&QTableWidget::itemClicked,[ this ]( QTableWidgetItem * item ){
 
-		const auto volumes = favorites::instance().readFavorites() ;
+		const auto& volumes = favorites::instance().readFavorites() ;
 
-		this->setVolumeProperties( volumes[ size_t( item->row() ) ] ) ;
+		auto s = static_cast< size_t >( item->row() ) ;
+
+		if( s < volumes.size() ){
+
+			this->setVolumeProperties( volumes[ s ] ) ;
+		}else{
+			utility::debug() << "Warning: Invalid row number, not updating in favorites2::favorites2" ;
+		}
 	} ) ;
 
-	connect( table,&QTableWidget::currentItemChanged,[]( QTableWidgetItem * x,QTableWidgetItem * y ){
+	connect( m_ui->tableWidget,&QTableWidget::currentItemChanged,[]( QTableWidgetItem * x,QTableWidgetItem * y ){
 
 		tablewidget::selectRow( x,y ) ;
 	} ) ;
@@ -530,7 +576,7 @@ favorites2::favorites2( QWidget * parent,
 
 	this->checkFavoritesConsistency() ;
 
-	const auto volumes = favorites::instance().readFavorites() ;
+	const auto& volumes = favorites::instance().readFavorites() ;
 
 	this->updateVolumeList( volumes,0 ) ;
 
@@ -608,6 +654,16 @@ favorites2::~favorites2()
 	delete m_ui ;
 }
 
+void favorites2::setCommand( QLineEdit * lineEdit )
+{
+	auto path = this->getExistingFile( tr( "Select A Command Executable" ) ) ;
+
+	if( !path.isEmpty() ){
+
+		lineEdit->setText( path ) ;
+	}
+}
+
 void favorites2::addkeyToWallet()
 {
 	auto a = m_ui->lineEditVolumePath->text() ;
@@ -620,7 +676,13 @@ void favorites2::addkeyToWallet()
 
 	m_ui->pbAddKeyToWallet->setEnabled( false ) ;
 
-	favorites2::addKey( m_wallet.get(),a,b,"Nil" ).then( [ this,a ]( bool s ){
+	m_ui->tableWidgetWallet->setEnabled( false ) ;
+	m_ui->pbAddKeyToWallet->setEnabled( false ) ;
+
+	favorites2::addKey( m_wallet.get(),a,b ).then( [ this,a ]( bool s ){
+
+		m_ui->tableWidgetWallet->setEnabled( true ) ;
+		m_ui->pbAddKeyToWallet->setEnabled( true ) ;
 
 		if( s ){
 
@@ -638,14 +700,18 @@ void favorites2::addkeyToWallet()
 
 void favorites2::deleteKeyFromWallet( const QString& id )
 {
+	m_ui->tableWidgetWallet->setEnabled( false ) ;
+	m_ui->pbAddKeyToWallet->setEnabled( false ) ;
 	favorites2::deleteKey( m_wallet.get(),id ).await() ;
+	m_ui->pbAddKeyToWallet->setEnabled( true ) ;
+	m_ui->tableWidgetWallet->setEnabled( true ) ;
 }
 
 QStringList favorites2::readAllKeys()
 {
 	QStringList a ;
 
-	auto s = Task::await( [ & ](){ return m_wallet->readAllKeys() ; } ) ;
+	const auto s = Task::await( [ & ](){ return m_wallet->readAllKeys() ; } ) ;
 
 	for( const auto& it : s ){
 
@@ -778,6 +844,7 @@ void favorites2::setControlsAvailability( bool e,bool m )
 	m_ui->lineEditVolumePath->setEnabled( e ) ;
 	m_ui->lineEditPassword->setEnabled( e ) ;
 	m_ui->pbVolumePath->setEnabled( e ) ;
+	m_ui->pbVolumePathFromFavorites->setEnabled( e ) ;
 	m_ui->cbShowPassword->setEnabled( e ) ;
 }
 
@@ -796,20 +863,25 @@ void favorites2::tabChanged( int index )
 
 	}else if( index == 1 ){
 
+		/*
+		 * Add/Edit tab
+		 */
+
 		m_ui->lineEditVolumePath->clear() ;
 		m_ui->lineEditPassword->clear() ;
 
 		m_ui->pbAddToWallets->setEnabled( !m_ui->rbNone->isChecked() ) ;
 
-		/*
-		 * Add/Edit tab
-		 */
 		if( m_editMode ){
 
 			m_ui->pbEdit->setEnabled( true ) ;
 			m_ui->pbAdd->setEnabled( false ) ;
 			m_ui->pbEdit->setFocus() ;
+
+			m_ui->labelMountPointPrefix->setText( tr( "Mount Point Path" ) ) ;
 		}else{
+			m_ui->labelMountPointPrefix->setText( tr( "Mount Point Prefix" ) ) ;
+
 			this->clearEditVariables() ;
 
 			if( !m_cipherPath.isEmpty() ){
@@ -828,6 +900,8 @@ void favorites2::tabChanged( int index )
 				m_ui->lineEditMountPath->setText( m_settings.mountPath() ) ;
 			}
 
+			this->setDefaultUI( engines::instance().getUnKnown() ) ;
+
 			m_ui->pbAdd->setFocus() ;
 		}
 
@@ -836,6 +910,9 @@ void favorites2::tabChanged( int index )
 		/*
 		 * Manage keys in wallets
 		 */
+
+		m_editMode = false ;
+
 		auto w = m_settings.autoMountBackEnd() ;
 
 		if( w.isValid() ){
@@ -844,12 +921,26 @@ void favorites2::tabChanged( int index )
 		}else {
 			this->setControlsAvailability( false,true ) ;
 		}
+
+		m_volPathFav.clear() ;
+
+		for( const auto& it : favorites::instance().readFavorites() ){
+
+			const auto& s = it.volumePath ;
+
+			m_volPathFav.addAction( s )->setObjectName( s ) ;
+		}
+
+		m_ui->pbVolumePathFromFavorites->setMenu( &m_volPathFav ) ;
 	}else{
-		m_ui->lineEditVolumePath->clear() ;
-		m_ui->lineEditPassword->clear() ;
 		/*
 		 * Settings
 		 */
+
+		m_editMode = false ;
+
+		m_ui->lineEditVolumePath->clear() ;
+		m_ui->lineEditPassword->clear() ;
 	}
 }
 
@@ -859,9 +950,12 @@ static void _updateList( QTableWidget * table,const QFont& font,
 {
 	tablewidget::clearTable( table ) ;
 
-	for( const auto& it : e ){
+	for( size_t i = 0 ; i < e.size() ; i++ ){
 
-		tablewidget::addRow( table,{ it.volumePath },font ) ;
+		const auto& s = e[ i ].volumePath ;
+
+		tablewidget::addRow( table,{ s },font ) ;
+		tablewidget::setRowToolTip( table,static_cast< int >( i ),s ) ;
 	}
 
 	tablewidget::selectRow( table,m ) ;
@@ -881,22 +975,30 @@ void favorites2::updateVolumeList( const std::vector<favorites::entry>& e,const 
 			}
 		}
 
-		static favorites::entry m ;
-		return m ;
+		return favorites::instance().unknown() ;
 	} ;
 
 	this->setVolumeProperties( _update() ) ;
 }
 
-void favorites2::updateVolumeList( const std::vector< favorites::entry >& e,int row )
+void favorites2::updateVolumeList( const std::vector< favorites::entry >& e,size_t row )
 {
-	_updateList( m_ui->tableWidget,this->font(),e,row ) ;
+	if( e.size() == 0 ){
 
-	if( size_t( row ) < e.size() ){
+		tablewidget::clearTable( m_ui->tableWidget ) ;
 
-		this->setVolumeProperties( e[ size_t( row ) ] ) ;
+		this->clearVolumeProperties() ;
+
+		utility::debug() << "Information: Favorites list is empty" ;
 	}else{
-		this->setVolumeProperties( {} ) ;
+		_updateList( m_ui->tableWidget,this->font(),e,static_cast< int >( row ) ) ;
+
+		if( row < e.size() ){
+
+			this->setVolumeProperties( e[ row ] ) ;
+		}else{
+			utility::debug() << "Warning: Row count mismatch in favorites2::updateVolumeList" ;
+		}
 	}
 }
 
@@ -915,7 +1017,7 @@ void favorites2::toggleAutoMount()
 
 		auto row = table->currentRow() ;
 
-		auto e = this->getEntry( row ) ;
+		const auto& e = this->getEntry( row ) ;
 
 		if( !e.volumePath.isEmpty() ){
 
@@ -942,34 +1044,22 @@ void favorites2::edit()
 	m_editRow = table->currentRow() ;
 	m_editMode = true ;
 
-	const auto volumes = favorites::instance().readFavorites() ;
+	const auto& volumes = favorites::instance().readFavorites() ;
 
 	if( m_editRow >= 0 && m_editRow < int( volumes.size() ) ){
 
 		this->clearEditVariables() ;
 
-		auto entry = volumes[ size_t( m_editRow ) ] ;
+		const auto& entry = volumes[ size_t( m_editRow ) ] ;
 
 		m_ui->lineEditEncryptedFolderPath->setText( entry.volumePath ) ;
 		m_ui->lineEditMountPath->setText( entry.mountPointPath ) ;
-		m_ui->cbAutoMount->setChecked( entry.autoMount.True() ) ;
+		m_ui->cbAutoMount->setChecked( entry.autoMount ) ;
 		m_ui->lineEditPreMount->setText( entry.preMountCommand ) ;
 		m_ui->lineEditPreUnMount->setText( entry.preUnmountCommand ) ;
 		m_ui->lineEditPostMount->setText( entry.postMountCommand ) ;
 		m_ui->lineEditPostUnmount->setText( entry.postUnmountCommand ) ;
 		m_ui->lineEditMountOptions->setText( entry.mountOptions ) ;
-
-		for( const auto& it : engines::instance().enginesWithNoConfigFile() ){
-
-			auto s = m_ui->lineEditEncryptedFolderPath->toPlainText() ;
-
-			if( s.startsWith( it + " ",Qt::CaseInsensitive ) ){
-
-				m_ui->lineEditEncryptedFolderPath->setText( s.mid( it.size() + 1 ) ) ;
-				m_ui->lineEditVolumeType->setText( it ) ;
-				break ;
-			}
-		}
 
 		m_ui->lineEditConfigFilePath->setText( entry.configFilePath ) ;
 		m_ui->lineEditIdleTimeOut->setText( entry.idleTimeOut ) ;
@@ -978,6 +1068,37 @@ void favorites2::edit()
 		m_ui->cbVolumeNoPassword->setChecked( entry.volumeNeedNoPassword ) ;
 		m_ui->cbReadOnlyMode->setChecked( entry.readOnlyMode.True() ) ;
 		m_ui->cbVolumeNoPassword->setChecked( entry.volumeNeedNoPassword ) ;
+
+		auto ss = m_ui->lineEditEncryptedFolderPath->toPlainText() ;
+
+		const auto& engines = engines::instance() ;
+
+		const auto& engine = engines.getByPaths( ss ) ;
+
+		if( engine->known() ){
+
+			if( engine->likeSsh() ){
+
+				this->setUiLikeSsh( engine.cipherFolder(),engine.get() ) ;
+
+				m_ui->lineEditConfigFilePath->setText( entry.identityAgent ) ;
+				m_ui->lineEditIdleTimeOut->setText( entry.identityFile ) ;
+			}else{
+				m_ui->lineEditEncryptedFolderPath->setText( engine.cipherFolder() ) ;
+
+				m_ui->lineEditVolumeType->clear() ;
+
+				for( const auto& it : engines.enginesWithNoConfigFile() ){
+
+					if( it == engine->name() || it == engine->displayName() ){
+
+						m_ui->lineEditVolumeType->setText( engine->uiName() ) ;
+
+						break ;
+					}
+				}
+			}
+		}
 
 		m_ui->pbAdd->setEnabled( false ) ;
 		m_ui->tabWidget->setCurrentIndex( 1 ) ;
@@ -1004,9 +1125,9 @@ void favorites2::removeEntryFromFavoriteList()
 
 		favorites::instance().removeFavoriteEntry( this->getEntry( row ) ) ;
 
-		const auto volumes = favorites::instance().readFavorites() ;
+		const auto& volumes = favorites::instance().readFavorites() ;
 
-		this->updateVolumeList( volumes,int( volumes.size() ) - 1 ) ;
+		this->updateVolumeList( volumes,volumes.size() - 1 ) ;
 	}
 }
 
@@ -1016,9 +1137,11 @@ void favorites2::updateFavorite( bool edit )
 
 	utility::hideQWidget thisWidget( this ) ;
 
-	auto dev = m_ui->lineEditEncryptedFolderPath->toPlainText() ;
-	auto path = m_ui->lineEditMountPath->toPlainText() ;
-	auto mOpts = m_ui->lineEditMountOptions->toPlainText() ;
+	const auto type = m_ui->lineEditVolumeType->toPlainText() ;
+	const auto dev  = m_ui->lineEditEncryptedFolderPath->toPlainText() ;
+	const auto path = m_ui->lineEditMountPath->toPlainText() ;
+
+	const auto& engine = engines::instance().getByName( type ) ;
 
 	if( dev.isEmpty() ){
 
@@ -1033,48 +1156,21 @@ void favorites2::updateFavorite( bool edit )
 
 	m_ui->tableWidget->setEnabled( false ) ;
 
-	auto configPath = m_ui->lineEditConfigFilePath->toPlainText() ;
-	auto idleTimeOUt = m_ui->lineEditIdleTimeOut->toPlainText() ;
+	bool likeSsh = false ;
 
-	if( m_engine.likeSsh() ){
+	auto dev_path = [ & ](){		
 
-		if( !configPath.isEmpty() ){
-
-			if( mOpts.isEmpty() ){
-
-				mOpts = "IdentityAgent=\"" + configPath + "\"" ;
-			}else{
-				mOpts += ",IdentityAgent=\"" + configPath + "\"" ;
-			}
-		}
-
-		if( !idleTimeOUt.isEmpty() ){
-
-			if( mOpts.isEmpty() ){
-
-				mOpts = "IdentityFile=\"" + idleTimeOUt + "\"" ;
-			}else{
-				mOpts += ",IdentityFile=\"" + idleTimeOUt + "\"" ;
-			}
-		}
-
-		configPath.clear() ;
-		idleTimeOUt.clear() ;
-	}
-
-	auto dev_path = [ & ](){
-
-		auto a = m_ui->lineEditVolumeType->toPlainText() ;
-
-		if( a.isEmpty() ){
+		if( type.isEmpty() ){
 
 			return dev ;
 		}else{
-			if( dev.startsWith( a + " ",Qt::CaseInsensitive ) ){
+			likeSsh = engine.known() && engine.likeSsh() ;
+
+			if( dev.startsWith( type + " ",Qt::CaseInsensitive ) ){
 
 				return dev ;
 			}else{
-				return a + " " + dev ;
+				return type + " " + dev ;
 			}
 		}
 	}() ;
@@ -1084,18 +1180,47 @@ void favorites2::updateFavorite( bool edit )
 	e.volumePath           = dev_path ;
 	e.mountPointPath       = path ;
 	e.autoMount            = m_ui->cbAutoMount->isChecked() ;
-	e.configFilePath       = configPath ;
-	e.idleTimeOut          = idleTimeOUt ;
-	e.mountOptions         = mOpts ;
+	e.mountOptions         = m_ui->lineEditMountOptions->toPlainText() ;
 	e.volumeNeedNoPassword = m_ui->cbVolumeNoPassword->isChecked() ;
 	e.preMountCommand      = m_ui->lineEditPreMount->text() ;
 	e.preUnmountCommand    = m_ui->lineEditPreUnMount->text() ;
 	e.postMountCommand     = m_ui->lineEditPostMount->text() ;
 	e.postUnmountCommand   = m_ui->lineEditPostUnmount->text() ;
+	e.reverseMode          = m_ui->cbReverseMode->isChecked() ;
+
+	if( likeSsh ){
+
+		e.identityAgent = m_ui->lineEditConfigFilePath->toPlainText() ;
+		e.identityFile  = m_ui->lineEditIdleTimeOut->toPlainText() ;
+
+		auto a = m_ui->lineEditSshPortNumber->text() ;
+
+		auto b = "port=" + a ;
+
+		if( !a.isEmpty() && a != "22" ){
+
+			e.volumePath = utility::likeSshaddPortNumber( e.volumePath,a ) ;
+
+			if( e.mountOptions.isEmpty() ){
+
+				e.mountOptions = b ;
+			}else{
+				e.mountOptions += "," + b ;
+			}
+		}
+	}else{
+		e.configFilePath = m_ui->lineEditConfigFilePath->toPlainText() ;
+		e.idleTimeOut    = m_ui->lineEditIdleTimeOut->toPlainText() ;
+	}
 
 	if( edit ){
 
-		auto f = this->getEntry( m_editRow ) ;
+		const auto& f = this->getEntry( m_editRow ) ;
+
+		if( engine.known() && engine.usesOnlyMountPoint() ){
+
+			e.mountPointPath = dev ;
+		}
 
 		favorites::instance().replaceFavorite( f,e ) ;
 	}else{
@@ -1109,7 +1234,29 @@ void favorites2::updateFavorite( bool edit )
 			e.mountPointPath = path + "/" + utility::split( dev,'/' ).last() ;
 		}
 
-		favorites::instance().add( e ) ;
+		auto a = favorites::instance().add( e ) ;
+
+		if( a != favorites::error::SUCCESS ){
+
+			m_ui->pbFailedToCreateFavorite->setVisible( true ) ;
+
+			m_ui->labelFailedToCreateFavorite->setVisible( true ) ;
+
+			m_ui->pbAdd->setEnabled( false ) ;
+
+			m_ui->pbFailedToCreateFavorite->setFocus() ;
+
+			if( a == favorites::error::ENTRY_ALREADY_EXISTS ){
+
+				m_ui->labelFailedToCreateFavorite->setText( tr( "Entry Already Exist" ) ) ;
+			}else{
+				m_ui->labelFailedToCreateFavorite->setText( tr( "Failed To Create Entry" ) ) ;
+			}
+
+			m_ui->tableWidget->setEnabled( true ) ;
+
+			return ;
+		}
 	}
 
 	m_ui->lineEditPreMount->clear() ;
@@ -1143,6 +1290,16 @@ void favorites2::cancel()
 void favorites2::folderPath()
 {
 	auto e = this->getExistingDirectory( tr( "Path To An Encrypted Folder" ) ) ;
+
+	if( !e.isEmpty() ){
+
+		m_ui->lineEditEncryptedFolderPath->setText( e ) ;
+	}
+}
+
+void favorites2::filePath()
+{
+	auto e = utility::getExistingFile( this,tr( "Select A File" ),QDir::homePath() ) ;
 
 	if( !e.isEmpty() ){
 
@@ -1230,17 +1387,19 @@ void favorites2::checkFavoritesConsistency()
 {	
 }
 
-favorites::entry favorites2::getEntry( int row )
+const favorites::entry& favorites2::getEntry( int row )
 {
-	size_t m = size_t( row ) ;
+	auto m = static_cast< size_t >( row ) ;
 
-	const auto volumes = favorites::instance().readFavorites() ;
+	const auto& ff = favorites::instance() ;
+
+	const auto& volumes = ff.readFavorites() ;
 
 	if( m < volumes.size() ){
 
 		return volumes[ m ] ;
 	}else{
-		return {} ;
+		return ff.unknown() ;
 	}
 }
 
@@ -1268,18 +1427,42 @@ QString favorites2::getExistingDirectory( const QString& r )
 
 void favorites2::setVolumeProperties( const favorites::entry& e )
 {
+	if( !e.hasValue() ){
+
+		utility::debug() << "Warning: Unknown Favorite Entry Encountered in favorites2::setVolumeProperties" ;
+	}
+
 	m_ui->textEditMountPoint->setText( e.mountPointPath ) ;
 
 	if( e.autoMount.defined() ){
 
-		m_ui->textEditAutoMount->setText( e.autoMount.True() ? "true" : "false" ) ;
+		m_ui->textEditAutoMount->setText( e.autoMount ? "true" : "false" ) ;
 	}else{
 		m_ui->textEditAutoMount->setText( QString() ) ;
 	}
 
-	m_ui->textEditConfigFilePath->setText( e.configFilePath ) ;
+	const auto& engine = engines::instance().getByPaths( e.volumePath ) ;
 
-	m_ui->textEditIdleTimeOut->setText( e.idleTimeOut ) ;
+	if( engine->known() && engine->likeSsh() ){
+
+		m_ui->label_3->setText( tr( "SSH_AUTH_SOCK Socket Path" ) ) ;
+		m_ui->label_4->setText( tr( "IdentityFile Path" ) ) ;
+
+		m_ui->textEditConfigFilePath->setText( e.identityAgent ) ;
+
+		m_ui->textEditIdleTimeOut->setText( e.identityFile ) ;
+
+		this->setUiLikeSsh( engine.cipherFolder(),engine.get() ) ;
+	}else{
+		this->setDefaultUI( engine.get() ) ;
+
+		m_ui->label_3->setText( tr( "Config File Path" ) ) ;
+		m_ui->label_4->setText( tr( "Idle Time Out" ) ) ;
+
+		m_ui->textEditConfigFilePath->setText( e.configFilePath ) ;
+
+		m_ui->textEditIdleTimeOut->setText( e.idleTimeOut ) ;
+	}
 
 	m_ui->textEditMountOptions->setText( e.mountOptions ) ;
 
@@ -1290,6 +1473,124 @@ void favorites2::setVolumeProperties( const favorites::entry& e )
 	m_ui->textEditPreUnMount->setText( e.preUnmountCommand ) ;
 
 	m_ui->textEditPostUnmount->setText( e.postUnmountCommand ) ;
+}
+
+void favorites2::clearVolumeProperties()
+{
+	m_ui->textEditAutoMount->clear() ;
+
+	m_ui->textEditMountPoint->clear() ;
+
+	m_ui->textEditConfigFilePath->clear() ;
+
+	m_ui->textEditIdleTimeOut->clear() ;
+
+	m_ui->textEditMountOptions->clear() ;
+
+	m_ui->textEditPreMount->clear() ;
+
+	m_ui->textEditPostMount->clear() ;
+
+	m_ui->textEditPreUnMount->clear() ;
+
+	m_ui->textEditPostUnmount->clear() ;
+}
+
+void favorites2::setUiLikeSsh( const QString& cipherPath,const engines::engine& engine )
+{
+	m_ui->pbFolderPath->setObjectName( "likeSshHandle" ) ;
+
+	m_ui->pbFolderPath->setIcon( QIcon( ":/sirikali.png" ) ) ;
+
+	m_ui->pbFolderPath->setEnabled( false ) ;
+
+	m_ui->lineEditEncryptedFolderPath->setText( cipherPath ) ;
+
+	m_ui->lineEditVolumeType->setText( engine.uiName() ) ;
+
+	auto s = m_ui->lineEditMountOptions->toPlainText() ;
+
+	if( s.isEmpty() ){
+
+		m_ui->lineEditMountOptions->setText( engine.sshOptions() ) ;
+	}
+
+	if( utility::platformIsWindows() ){
+
+		m_ui->label_15->setText( tr( "Create Network Drive" ) ) ;
+	}
+
+	m_ui->labelName ->setText( tr( "Remote Ssh Server Address\n(Example: woof@example.com:/remote/path)" ) ) ;
+	m_ui->labelCofigFilePath->setText( tr( "SSH_AUTH_SOCK Socket Path (Optional)" ) ) ;
+	m_ui->labelIdleTimeOut->setText( tr( "IdentityFile Path (Optional)" ) ) ;
+
+	m_ui->lineEditSshPortNumber->setEnabled( true ) ;
+	m_ui->labelPortyNumber->setEnabled( true ) ;
+	m_ui->labelPortyNumber->setText( tr( "Ssh Port Number" ) ) ;
+
+	m_ui->pbIdentityFile->setVisible( true ) ;
+
+	if( s.contains( "port=",Qt::CaseInsensitive ) ){
+
+		QStringList ss ;
+
+		for( const auto& it : utility::split( s,',' ) ){
+
+			if( it.startsWith( "port=",Qt::CaseInsensitive ) ){
+
+				m_ui->lineEditSshPortNumber->setText( it.mid( 5 ) ) ;
+			}else{
+				ss.append( it ) ;
+			}
+		}
+
+		m_ui->lineEditMountOptions->setText( ss.join( ',' ) ) ;
+	}else{
+		m_ui->lineEditSshPortNumber->setText( "22" ) ;
+	}
+}
+
+void favorites2::setDefaultUI( const engines::engine& engine )
+{
+	m_ui->label_15->setText( tr( "Reverse Mode (Gocryptfs and Encfs Only)" ) ) ;
+	m_ui->labelCofigFilePath->setText( tr( "Config File Path (Optional)" ) ) ;
+	m_ui->labelIdleTimeOut->setText( tr( "Idle TimeOut (Optional)" ) ) ;
+	m_ui->lineEditMountOptions->clear() ;
+	m_ui->lineEditSshPortNumber->clear() ;
+	m_ui->lineEditSshPortNumber->setEnabled( false ) ;
+	m_ui->pbFolderPath->setEnabled( true ) ;
+	m_ui->pbIdentityFile->setVisible( false ) ;
+	m_ui->labelPortyNumber->clear() ;
+
+	if( engine.known() ){
+
+		if( engine.usesOnlyMountPoint() ){
+
+			m_ui->pbFolderPath->setIcon( QIcon( ":/folder.png" ) ) ;
+
+			m_ui->pbFolderPath->setObjectName( "FolderHandle" ) ;
+			m_ui->labelName->setText( tr( "Mount Point Path" ) ) ;
+
+			m_ui->lineEditEncryptedFolderPath->setText( m_settings.mountPath( engine.uiName() ) ) ;
+
+			return ;
+
+		}else if( engine.fileExtensions().size() > 0 ){
+
+			m_ui->pbFolderPath->setObjectName( "FileHandle" ) ;
+
+			m_ui->pbFolderPath->setIcon( QIcon( ":/file.png" ) ) ;
+
+			m_ui->labelName ->setText( tr( "File Path" ) ) ;
+
+			return ;
+		}
+	}
+
+	m_ui->pbFolderPath->setIcon( QIcon( ":/folder.png" ) ) ;
+	m_ui->pbFolderPath->setObjectName( "FolderHandle" ) ;
+
+	m_ui->labelName ->setText( tr( "Encrypted Folder Path" ) ) ;
 }
 
 void favorites2::ShowUI()
@@ -1307,13 +1608,8 @@ void favorites2::ShowUI()
 
 		m_ui->tabWidget->setCurrentIndex( 1 ) ;
 
-		m_ui->lineEditMountOptions->setText( m_engine.sshOptions() ) ;
+		this->setUiLikeSsh( m_cipherPath,m_engine ) ;
 
-		m_ui->lineEditEncryptedFolderPath->setText( m_cipherPath ) ;
-		m_ui->labelName ->setText( tr( "Remote Ssh Server Address\n(Example: woof@example.com:/remote/path)" ) ) ;
-		m_ui->labelCofigFilePath->setText( tr( "SSH_AUTH_SOCK Socket Path (Optional)" ) ) ;
-		m_ui->labelIdleTimeOut->setText( tr( "IdentityFile Path (Optional)" ) ) ;
-		m_ui->lineEditVolumeType->setText( m_engine.name() ) ;
 		m_ui->pbEdit->setEnabled( false ) ;
 	}else{
 		m_ui->pbIdentityFile->setVisible( false ) ;
@@ -1324,6 +1620,11 @@ void favorites2::ShowUI()
 	if( !m_cipherPath.isEmpty() ){
 
 		m_ui->tabWidget->setCurrentIndex( 1 ) ;
+
+		if( !m_engine.hasConfigFile() ){
+
+			m_ui->lineEditVolumeType->setText( m_engine.uiName() ) ;
+		}
 	}
 
 	m_ui->tableWidget->setFocus() ;
@@ -1339,11 +1640,6 @@ void favorites2::ShowUI()
 	this->show() ;
 	this->raise() ;
 	this->activateWindow() ;
-}
-
-void favorites2::addEntries( const QStringList& l )
-{
-	tablewidget::addRow( m_ui->tableWidget,l ) ;
 }
 
 bool favorites2::eventFilter( QObject * watched,QEvent * event )

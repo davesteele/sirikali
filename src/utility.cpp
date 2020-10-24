@@ -141,68 +141,11 @@ bool utility::platformIsNOTWindows()
 	return !utility::platformIsWindows() ;
 }
 
-static QByteArray _cookie ;
-static QString _polkit_socket_path ;
-
-static debugWindow * _debugWindow = nullptr ;
-
-static bool _use_polkit = false ;
-
-static std::function< void() > _failed_to_connect_to_zulupolkit ;
-
-static bool _enable_debug = false ;
-
-static QThread * _main_gui_thread ;
-
-static QWidget * _mainQWidget ;
-
-void utility::setMainQWidget( QWidget * m )
-{
-	_mainQWidget = m ;
-}
-
-QWidget * utility::mainQWidget()
-{
-	return _mainQWidget ;
-}
-
-void utility::enableDebug( bool e )
-{
-	_enable_debug = e ;
-}
-
-bool utility::debugEnabled()
-{
-	return _enable_debug ;
-}
-
-void utility::setDebugWindow( debugWindow * w )
-{
-	_debugWindow = w ;
-}
-
-static void _show_debug_window()
-{
-	if( _debugWindow ){
-
-		_debugWindow->Show() ;
-	}
-}
-
-static void _set_debug_window_text( const QString& e )
-{
-	if( _debugWindow ){
-
-		_debugWindow->UpdateOutPut( e,utility::debugEnabled() ) ;
-	}
-}
-
 void windowsDebugWindow( const QString& e,bool s )
 {
 	if( s ){
 
-		utility::enableDebug( true ) ;
-		_show_debug_window() ;
+		utility::logger().enableDebug().showDebugWindow() ;
 	}
 
 	utility::debug() << e ;
@@ -217,11 +160,6 @@ utility::SocketPaths utility::socketPath()
 		auto a = QStandardPaths::writableLocation( QStandardPaths::RuntimeLocation ) ;
 		return { a,a + "/SiriKali.socket" } ;
 	}
-}
-
-void utility::polkitFailedWarning( std::function< void() > e )
-{
-	_failed_to_connect_to_zulupolkit = std::move( e ) ;
 }
 
 ::Task::future< utility::Task >& utility::Task::run( const QString& exe,
@@ -244,7 +182,7 @@ void utility::polkitFailedWarning( std::function< void() > e )
 }
 
 void utility::Task::execute( const QString& exe,
-			     const QStringList& list,
+			     const QStringList& args,
 			     int waitTime,
 			     const QProcessEnvironment& env,
 			     const QByteArray& password,
@@ -252,7 +190,9 @@ void utility::Task::execute( const QString& exe,
 			     bool polkit,
 			     bool runs_in_background )
 {
-	if( polkit && utility::useSiriPolkit() ){
+	const auto& m = utility::miscOptions::instance() ;
+
+	if( polkit && m.usePolkit() ){
 
 		auto _report_error = [ this ]( const char * msg ){
 
@@ -265,7 +205,7 @@ void utility::Task::execute( const QString& exe,
 
 		QLocalSocket s ;
 
-		s.connectToServer( utility::helperSocketPath() ) ;
+		s.connectToServer( m.getSocketPath() ) ;
 
 		for( int i = 0 ; ; i++ ){
 
@@ -286,14 +226,18 @@ void utility::Task::execute( const QString& exe,
 			}
 		}
 
+		utility::logger logger ;
+
+		logger.showText( exe,args ) ;
+
 		s.write( [ & ]()->QByteArray{
 
-			SirikaliJson json( utility::jsonLogger() ) ;
+			SirikaliJson json( logger.function() ) ;
 
-			json[ "cookie" ]   = _cookie ;
+			json[ "cookie" ]   = m.getCookie() ;
 			json[ "password" ] = password ;
 			json[ "command" ]  = exe ;
-			json[ "args" ]     = list ;
+			json[ "args" ]     = args ;
 
 			return json.structure() ;
 		}() ) ;
@@ -302,7 +246,7 @@ void utility::Task::execute( const QString& exe,
 
 		s.waitForReadyRead() ;
 
-		SirikaliJson json( s.readAll(),utility::jsonLogger() ) ;
+		SirikaliJson json( s.readAll(),logger.function() ) ;
 
 		m_finished   = json.getBool( "finished" ) ;
 		m_exitCode   = json.getInterger( "exitCode" ) ;
@@ -310,11 +254,25 @@ void utility::Task::execute( const QString& exe,
 		m_stdError   = json.getByteArray( "stdError" ) ;
 		m_stdOut     = json.getByteArray( "stdOut" ) ;
 
-		utility::logCommandOutPut( { m_stdOut,m_stdError,m_exitCode,m_exitStatus,m_finished },exe,list ) ;
+		logger.showText( { m_stdOut,m_stdError,m_exitCode,m_exitStatus,m_finished } ) ;
 	}else{
 		if( runs_in_background ){
 
-			auto& ss = ::Task::process::run( exe,list,waitTime,password,env,std::move( function ) ) ;
+			bool log = true ;
+
+			if( exe.endsWith( "fscrypt" ) && args.size() > 0 && args.at( 0 ) == "status" ){
+
+				log = false ;
+			}
+
+			utility::logger logger ;
+
+			if( log ){
+
+				logger.showText( exe,args ) ;
+			}
+
+			auto& ss = ::Task::process::run( exe,args,waitTime,password,env,std::move( function ) ) ;
 
 			auto s = utility::unwrap( ss ) ;
 
@@ -324,11 +282,16 @@ void utility::Task::execute( const QString& exe,
 			m_stdOut     = s.std_out() ;
 			m_stdError   = s.std_error() ;
 
-			utility::logCommandOutPut( s,exe,list ) ;
-		}else{
-			utility::debug() << "Starting detached process" ;
+			if( log ){
 
-			if( QProcess::startDetached( exe,list ) ){
+				logger.showText( s ) ;
+			}
+		}else{
+			utility::debug() << "Warning, Starting a detached process" ;
+
+			utility::logger().showText( exe,args ).showLine() ;
+
+			if( QProcess::startDetached( exe,args ) ){
 
 				m_exitCode = 0 ;
 			}else{
@@ -337,143 +300,70 @@ void utility::Task::execute( const QString& exe,
 
 			m_finished   = true ;
 			m_exitStatus = 0 ;
-
-			::Task::process::result m{ m_stdError,m_stdOut,m_exitCode,m_exitStatus,m_finished } ;
-
-			utility::logCommandOutPut( m,exe,list ) ;
 		}
 	}
 }
 
-static void _build_debug_msg( const QString& b )
-{
-	QString a = "***************************\n" ;
-	QString c = "\n***************************" ;
-
-	if( utility::debugEnabled() ){
-
-		utility::debug::cout() << b ;
-	}
-
-	_set_debug_window_text( a + b + c ) ;
-}
-
 utility::debug utility::debug::operator<<( const QString& e )
 {
-	_build_debug_msg( e ) ;
+	utility::logger().showTextWithLines( e ) ;
 
 	return utility::debug() ;
 }
 
-static QString _has_early_error_log ;
-static bool _early_boot = true ;
-
 void utility::applicationStarted()
 {
-	_early_boot = false ;
+	utility::miscOptions::instance().doneStarting() ;
 
-	if( !_has_early_error_log.isEmpty() ){
+	const auto& m = utility::miscOptions::instance() ;
 
-		utility::enableDebug( true ) ;
+	const auto& e = m.getStartingLogs() ;
+
+	if( !e.isEmpty() ){
 
 		QString a = "***********Start early logs************" ;
 		QString b = "\n\n***********End early logs*****************" ;
 
-		_set_debug_window_text( a + _has_early_error_log + b ) ;
-
-		_show_debug_window() ;
+		utility::logger().enableDebug().showText( a + e + b ).showDebugWindow() ;
 	}
-}
-
-bool utility::earlyBoot()
-{
-	return _early_boot ;
 }
 
 void utility::debug::showDebugWindow( const QString& e )
 {
-	utility::enableDebug( true ) ;
-	_build_debug_msg( e ) ;
-	_show_debug_window() ;
+	utility::logger().enableDebug().showTextWithLines( e ).showDebugWindow() ;
 }
 
 void utility::debug::logErrorWhileStarting( const QString& e )
 {
-	_has_early_error_log += "\n\n" + e ;
+	utility::logger().appendLog( "\n\n" + e ) ;
 }
 
 utility::debug utility::debug::operator<<( int e )
 {
-	_build_debug_msg( QString::number( e ) ) ;
+	utility::logger().showTextWithLines( QString::number( e ) ) ;
 
 	return utility::debug() ;
 }
 
 utility::debug utility::debug::operator<<( const char * e )
 {
-	_build_debug_msg( e ) ;
+	utility::logger().showTextWithLines( e ) ;
 
 	return utility::debug() ;
 }
 
 utility::debug utility::debug::operator<<( const QByteArray& e )
 {
-	_build_debug_msg( e ) ;
+	utility::logger().showTextWithLines( e ) ;
 
 	return utility::debug() ;
 }
 
 utility::debug utility::debug::operator<<( const QStringList& e )
 {
-	_build_debug_msg( e.join( "\n" ) ) ;
+	utility::logger().showTextWithLines( e.join( "\n" ) ) ;
 	return utility::debug() ;
 }
-
-void utility::logCommandOutPut( const QString& e )
-{
-	_set_debug_window_text( "---------\n" + e + "\n---------\n" ) ;
-}
-
-void utility::logCommandOutPut( const ::Task::process::result& m,const QString& exe,const QStringList& args )
-{
-	if( exe.contains( "fscrypt status" ) ){
-
-		return ;
-	}
-
-	auto _trim = []( QString e ){
-
-		while( true ){
-
-			if( e.endsWith( '\n' ) ){
-
-				e.truncate( e.size() - 1 ) ;
-			}else{
-				break ;
-			}
-		}
-
-		return e ;
-	} ;
-
-	QString s = "Exit Code: %1\nExit Status: %2\n-------\nStdOut: %3\n-------\nStdError: %4\n-------\nCommand: %5\n-------\n" ;
-
-	QString r ;
-
-	for( const auto& it : args ){
-
-		r += " \"" + it + "\"" ;
-	}
-
-	auto e = s.arg( QString::number( m.exit_code() ),
-			QString::number( m.exit_status() ),
-			_trim( m.std_out() ),
-			_trim( m.std_error() ),
-			"\"" + exe + "\" " + r ) ;
-
-	_set_debug_window_text( e ) ;
-}
-
 
 static engines::engine::exe_args siriPolkitExe()
 {
@@ -483,13 +373,15 @@ static engines::engine::exe_args siriPolkitExe()
 
 		return {} ;
 	}else{
-		return { exe,{ siriPolkitPath,utility::helperSocketPath(),"fork" } } ;
+		return { exe,{ siriPolkitPath,utility::miscOptions::instance().getSocketPath(),"fork" } } ;
 	}
 }
 
 static ::Task::future< utility::Task >& _start_siripolkit( const engines::engine::exe_args_const& e )
 {
-	_cookie = crypto::getRandomData( 16 ).toHex() ;
+	auto m = crypto::getRandomData( 16 ).toHex() ;
+
+	utility::miscOptions::instance().setCookie( m ) ;
 
 	return ::Task::run( [ = ]{
 
@@ -497,7 +389,7 @@ static ::Task::future< utility::Task >& _start_siripolkit( const engines::engine
 				      e.args,
 				      -1,
 				      utility::systemEnvironment(),
-				      _cookie,
+				      m,
 				      [](){},
 				      false ) ;
 	} ) ;
@@ -505,7 +397,9 @@ static ::Task::future< utility::Task >& _start_siripolkit( const engines::engine
 
 bool utility::enablePolkit()
 {
-	if( _use_polkit ){
+	const auto& m = utility::miscOptions::instance() ;
+
+	if( m.usePolkit() ){
 
 		return true ;
 	}
@@ -514,40 +408,46 @@ bool utility::enablePolkit()
 
 	if( !exe.exe.isEmpty() ){
 
-		auto socketPath = utility::helperSocketPath() ;
+		const auto& socketPath = m.getSocketPath() ;
 
 		if( utility::unwrap( _start_siripolkit( exe ) ).success() ){
 
-			_use_polkit = true ;
+			utility::miscOptions::instance().setUsePolkit( true ) ;
 
-			while( !utility::pathExists( socketPath ) ){
+			while( utility::pathNotExists( socketPath ) ){
 
 				utility::waitForOneSecond() ;
 			}
 		}
 	}
 
-	return _use_polkit ;
+	return m.usePolkit() ;
 }
 
 void utility::initGlobals()
 {
 	settings::instance().scaleGUI() ;
 
-	utility::setGUIThread() ;
+	auto& m = utility::miscOptions::instance() ;
 
-	#ifdef Q_OS_LINUX
+	m.setCurrentThreadAsMain() ;
+
+	m.setEnableDebug( settings::instance().showDebugWindowOnStartup() ) ;
+
+	if( utility::platformIsLinux() ){
 
 		auto uid = getuid() ;
 
 		QString a = "/tmp/SiriKali-" + QString::number( uid ) ;
 
-		_polkit_socket_path = a + "/siriPolkit.socket" ;
+		auto b = a + "/siriPolkit.socket" ;
+
+		utility::miscOptions::instance().setPolkitPath( b ) ;
 
 		QDir e ;
 
 		e.remove( a ) ;
-		e.rmdir( _polkit_socket_path ) ;
+		e.rmdir( b ) ;
 
 		e.mkpath( a ) ;
 
@@ -555,24 +455,16 @@ void utility::initGlobals()
 
 		if( chown( s.constData(),uid,uid ) ){}
 		if( chmod( s.constData(),0700 ) ){}
-	#endif
-}
-
-QString utility::helperSocketPath()
-{
-	return _polkit_socket_path ;
-}
-
-bool utility::useSiriPolkit()
-{
-	return _use_polkit ;
+	}
 }
 
 void utility::quitHelper()
 {
-	#ifdef Q_OS_LINUX
+	if( utility::platformIsLinux() ){
 
-		auto e = utility::helperSocketPath() ;
+		const auto& w = utility::miscOptions::instance() ;
+
+		auto e = w.getSocketPath() ;
 
 		if( utility::pathExists( e ) ){
 
@@ -586,7 +478,7 @@ void utility::quitHelper()
 
 					SirikaliJson json( []( const QString& e ){ utility::debug() << e ; } ) ;
 
-					json[ "cookie" ]   = _cookie ;
+					json[ "cookie" ]   = w.getCookie() ;
 					json[ "password" ] = "" ;
 					json[ "command" ]  = "exit" ;
 					json[ "args" ]     = QStringList() ;
@@ -602,8 +494,8 @@ void utility::quitHelper()
 
 		QDir m ;
 		m.remove( a ) ;
-		m.rmdir( _polkit_socket_path ) ;
-	#endif
+		m.rmdir( w.getSocketPath() ) ;
+	}
 }
 
 ::Task::future<bool>& utility::openPath( const QString& path,const QString& opener )
@@ -630,28 +522,6 @@ void utility::openPath( const QString& path,const QString& opener,
 			}
 		} ) ;
 	}
-}
-
-::Task::future< utility::fsInfo >& utility::fileSystemInfo( const QString& q )
-{
-	return ::Task::run( [ = ](){
-
-		Q_UNUSED( q )
-
-		utility::fsInfo s ;
-
-#ifndef Q_OS_WIN
-		struct statfs e ;
-
-		s.valid = statfs( q.toLatin1().constData(),&e ) == 0 ;
-
-		s.f_bavail = e.f_bavail ;
-		s.f_bfree  = e.f_bfree ;
-		s.f_blocks = e.f_blocks ;
-		s.f_bsize  = static_cast< decltype( s.f_bsize ) >( e.f_bsize ) ;
-#endif
-		return s ;
-	} ) ;
 }
 
 static bool _help()
@@ -1040,49 +910,14 @@ bool utility::removeFolder( const QString& e,int attempts )
 	}
 }
 
-#ifdef Q_OS_WIN
-
-QByteArray utility::readPassword( bool addNewLine )
-{
-	std::cout << "Password: " << std::flush ;
-
-	QByteArray s ;
-	int e ;
-
-	int m = settings::instance().readPasswordMaximumLength() ;
-
-	for( int i = 0 ; i < m ; i++ ){
-
-		e = std::getchar() ;
-
-		if( e == '\n' || e == -1 ){
-
-			break ;
-		}else{
-			s += static_cast< char >( e ) ;
-		}
-	}
-
-	if( addNewLine ){
-
-		std::cout << std::endl ;
-	}
-
-	return s ;
-}
-
-#else
-
-#include <termios.h>
-
-static inline bool _terminalEchoOff( struct termios * old,struct termios * current )
+static bool _terminalEchoOff( struct termios * old,struct termios * current )
 {
 	if( tcgetattr( 1,old ) != 0 ){
 
 		return false ;
 	}
 
-	*current = *old;
+	*current = *old ;
 	current->c_lflag &= static_cast< unsigned int >( ~ECHO ) ;
 
 	if( tcsetattr( 1,TCSAFLUSH,current ) != 0 ){
@@ -1095,41 +930,68 @@ static inline bool _terminalEchoOff( struct termios * old,struct termios * curre
 
 QByteArray utility::readPassword( bool addNewLine )
 {
-	std::cout << "Password: " << std::flush ;
+	if( utility::platformIsWindows() ){
 
-	struct termios old ;
-	struct termios current ;
+		std::cout << "Password: " << std::flush ;
 
-	_terminalEchoOff( &old,&current ) ;
+		QByteArray s ;
+		int e ;
 
-	QByteArray s ;
-	int e ;
+		int m = settings::instance().readPasswordMaximumLength() ;
 
-	int m = settings::instance().readPasswordMaximumLength() ;
+		for( int i = 0 ; i < m ; i++ ){
 
-	for( int i = 0 ; i < m ; i++ ){
+			e = std::getchar() ;
 
-		e = std::getchar() ;
+			if( e == '\n' || e == -1 ){
 
-		if( e == '\n' || e == -1 ){
-
-			break ;
-		}else{
-			s += static_cast< char >( e ) ;
+				break ;
+			}else{
+				s += static_cast< char >( e ) ;
+			}
 		}
+
+		if( addNewLine ){
+
+			std::cout << std::endl ;
+		}
+
+		return s ;
+	}else{
+		std::cout << "Password: " << std::flush ;
+
+		struct termios old ;
+		struct termios current ;
+
+		_terminalEchoOff( &old,&current ) ;
+
+		QByteArray s ;
+		int e ;
+
+		int m = settings::instance().readPasswordMaximumLength() ;
+
+		for( int i = 0 ; i < m ; i++ ){
+
+			e = std::getchar() ;
+
+			if( e == '\n' || e == -1 ){
+
+				break ;
+			}else{
+				s += static_cast< char >( e ) ;
+			}
+		}
+
+		tcsetattr( 1,TCSAFLUSH,&old ) ;
+
+		if( addNewLine ){
+
+			std::cout << std::endl ;
+		}
+
+		return s ;
 	}
-
-	tcsetattr( 1,TCSAFLUSH,&old ) ;
-
-	if( addNewLine ){
-
-		std::cout << std::endl ;
-	}
-
-	return s ;
 }
-
-#endif
 
 const QProcessEnvironment& utility::systemEnvironment()
 {
@@ -1295,24 +1157,9 @@ void utility::setWindowsMountPointOptions( QWidget * obj,QLineEdit * e,QPushButt
 	_setWindowsMountMountOptions( obj,e,s ) ;
 }
 
-void utility::setGUIThread()
-{
-	_main_gui_thread = QThread::currentThread() ;
-}
-
-bool utility::runningOnGUIThread()
-{
-	return QThread::currentThread() == _main_gui_thread ;
-}
-
-bool utility::runningOnBackGroundThread()
-{
-	return QThread::currentThread() != _main_gui_thread ;
-}
-
 void utility::runInUiThread( std::function< void() > function )
 {
-	runInThread::instance( _main_gui_thread,std::move( function ) ) ;
+	runInThread::instance( utility::miscOptions::instance().getMainGUIThread(),std::move( function ) ) ;
 }
 
 void utility::waitForOneSecond()
@@ -1322,7 +1169,7 @@ void utility::waitForOneSecond()
 
 void utility::wait( int time )
 {
-	if( utility::runningOnBackGroundThread() ){
+	if( utility::miscOptions::instance().runningOnBackGroundThread() ){
 
 		utility::Task::wait( time ) ;
 	}else{
@@ -1352,7 +1199,7 @@ static bool _wait_for_finished( QProcess& e,int timeOut,Function wait )
 
 bool utility::waitForFinished( QProcess& e,int timeOut )
 {
-	if( utility::runningOnGUIThread() ){
+	if( utility::miscOptions::instance().runningOnGUIThread() ){
 
 		return _wait_for_finished( e,timeOut,[](){ utility::Task::suspendForOneSecond() ; } ) ;
 	}else{
@@ -1380,9 +1227,13 @@ utility::qbytearray_result utility::yubiKey( const QByteArray& challenge )
 
 		auto args = utility::split( settings::instance().ykchalrespArguments(),' ' );
 
+		utility::logger logger ;
+
+		logger.showText( exe,args ) ;
+
 		auto s = utility::unwrap( ::Task::process::run( exe,args,-1,challenge ) ) ;
 
-		utility::logCommandOutPut( s,exe,args ) ;
+		logger.showText( s ) ;
 
 		if( s.success() ){
 
@@ -1395,7 +1246,7 @@ utility::qbytearray_result utility::yubiKey( const QByteArray& challenge )
 
 			return m ;
 		}else{
-			utility::debug() << "Failed to get a responce from ykchalresp" ;
+			utility::debug() << "Failed to get a response from ykchalresp" ;
 			utility::debug() << "StdOUt:" << s.std_out() ;
 			utility::debug() << "StdError:" << s.std_error() ;
 		}
@@ -1470,11 +1321,31 @@ QString utility::removeLastPathComponent( const QString& e,char separator )
 	return separator + s.join( separator ) ;
 }
 
-std::function< void( const QString& ) > utility::jsonLogger()
-{
-	return []( const QString& e ){
 
-		if( utility::earlyBoot() ){
+QString utility::likeSshaddPortNumber( const QString& path,const QString& port )
+{
+	return path + settings::instance().portSeparator() + port ;
+}
+
+QString utility::likeSshRemovePortNumber( const QString& path )
+{
+	return utility::split( path,settings::instance().portSeparator() ).at( 0 ) ;
+}
+
+QString utility::logger::starLine()
+{
+	return "*************************************" ;
+}
+
+utility::logger::logger() : m_miscOptions( utility::miscOptions::instance() )
+{
+}
+
+std::function< void( const QString& ) > utility::logger::function()
+{
+	return [ this ]( const QString& e ){
+
+		if( m_miscOptions.starting() ){
 
 			if( e.startsWith( "Error" ) ){
 
@@ -1486,4 +1357,121 @@ std::function< void( const QString& ) > utility::jsonLogger()
 			utility::debug() << e ;
 		}
 	} ;
+}
+
+utility::logger& utility::logger::showText( const QString& cmd,const QStringList& args )
+{
+	QString exe = "Command: \"" + cmd + "\"" ;
+
+	for( const auto& it : args ){
+
+		exe += " \"" + it + "\"" ;
+	}
+
+	this->showText( exe ) ;
+
+	return *this ;
+}
+
+utility::logger& utility::logger::showText( const QString& e )
+{
+	auto s = m_miscOptions.getDebugWindow() ;
+
+	if( s.has_value() ){
+
+		s.value()->UpdateOutPut( e,m_miscOptions.debugEnabled() ) ;
+	}
+
+	return *this ;
+}
+
+utility::logger& utility::logger::showLine()
+{
+	this->showText( logger::starLine() ) ;
+	return *this ;
+}
+
+utility::logger& utility::logger::appendLog( const QString& e )
+{
+	m_miscOptions.appendLog( e ) ;
+	return *this ;
+}
+
+utility::logger& utility::logger::showText( const ::Task::process::result& m )
+{
+	auto _trim = []( QString e,bool s )->QString{
+
+		while( true ){
+
+			if( e.endsWith( '\n' ) ){
+
+				e.truncate( e.size() - 1 ) ;
+			}else{
+				break ;
+			}
+		}
+
+		if( e.isEmpty() ){
+
+			if( s ){
+
+				return "\n" ;
+			}else{
+				return "";
+			}
+		}else{
+			if( s ){
+
+				return "\n" + e + "\n" ;
+			}else{
+				return "\n" + e ;
+			}
+		}
+	} ;
+
+	QString s = "-------\nExit Code: %1\nExit Status: %2\n-------\nStdOut:%3-------\nStdError:%4" ;
+
+	auto e = s.arg( QString::number( m.exit_code() ),
+			QString::number( m.exit_status() ),
+			_trim( m.std_out(),true ),
+			_trim( m.std_error(),false ) ) ;
+
+	this->showText( e ) ;
+
+	this->showLine() ;
+
+	return *this ;
+}
+
+utility::logger& utility::logger::showTextWithLines( const QString& b )
+{
+	auto m = logger::starLine() ;
+
+	if( m_miscOptions.debugEnabled() ){
+
+		utility::debug::cout() << b ;
+	}
+
+	this->showText( m + "\n" + b + "\n" + m ) ;
+
+	return *this ;
+}
+
+utility::logger& utility::logger::showDebugWindow()
+{
+	auto s = m_miscOptions.getDebugWindow() ;
+
+	if( s.has_value() ){
+
+		s.value()->Show() ;
+	}
+
+	return *this ;
+}
+
+utility::logger& utility::logger::enableDebug()
+{
+	m_miscOptions.setEnableDebug( true ) ;
+
+	return *this ;
 }

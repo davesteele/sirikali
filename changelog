@@ -243,3 +243,16 @@ version 1.4.2(December 18,2019)
    version 1.4.6(August 03,2020)
     [ALL]
 -- Fix a crash when trying to unlock volume by clicking the "mount volume" button.
+
+   version 1.4.7(October 01,2020)
+   [ALL]
+-- Make the UI more user friendly to ssh based backends by using texts that make most sense
+   in this backend.
+-- Make CLI interface work when working in a none GUI environment by using
+   QCoreApplication instance instead of QApplication instance.
+-- Add a GUI way to add port number to sshfs connections and make it possible to set different wallet
+   passwords based on connection's port number.
+-- Do not silently fail when a user attempt to add a favorite entry and its name collide with an
+   existing entry.
+-- Add explicit support for extensions that do not use cipher path and use "google-drive-ocamlfuse"
+   as a reference program.

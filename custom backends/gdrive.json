@@ -10,34 +10,32 @@
         "configFileArgument": "",
         "configFileNames": [],
         "createControlStructure": "",
-        "displayName":"",
-        "executableName": "fuseiso",
+        "displayName":"gdrive",
+        "executableName": "google-drive-ocamlfuse",
         "failedToMountTextList": [],
-        "fileExtensions": [
-                 ".iso"," .nrg"," .bin"," .mdf",".img"
-        ],
+        "fileExtensions": [],
         "fuseNames": [
-                "fuse.fuseiso"
+                "fuse.google-drive-ocamlfuse"
         ],
         "idleString": "--idle %{timeout}",
         "keyFileArgument": "--keyfile %{keyfile}",
         "likeSsh": false,
-        "mountControlStructure": "%{mountOptions} %{cipherFolder} %{mountPoint} %{fuseOpts}",
+        "mountControlStructure": "%{cipherFolder} %{fuseOpts}",
         "names": [
-                "fuseiso"
+                "google-drive-ocamlfuse"
         ],
         "passwordFormat": "%{password}",
         "requiresAPassword": false,
         "reverseString": "",
         "runsInBackGround": true,
-        "setsCipherPath": true,
+        "setsCipherPath": false,
         "sshOptions": "idmap=user,StrictHostKeyChecking=no",
         "takesTooLongToUnlock": false,
         "unMountCommand": [],
-        "versionArgumentString": "--version",
+        "versionArgumentString": "-version",
         "versionMinimum": "",
         "versionOutputStdOut": true,
-        "versionStringTextPosition": [ 0,1 ],
+        "versionStringTextPosition": [ 0,2 ],
         "volumePropertiesCommands": [],
         "windowsExecutableFolderPath": "",
         "windowsInstallPathRegistryKey": "",

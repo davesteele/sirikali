@@ -95,28 +95,61 @@ keyDialog::keyDialog( QWidget * parent,
 
 	this->setUpInitUI() ;
 
+	keyDialog::volumeList bb ;
+	keyDialog::volumeList cc ;
+
 	/*
 	 * We are sorting in a way that makes all volumes that meet below two criteria to appear first.
 	 *
 	 * 1. Have auto mount option set.
-	 * 2. Have password.
+	 * 2. Do not require password.
+	 * 3. Have password.
 	 */
 
-	keyDialog::volumeList b ;
-
+	/*
+	 * We put first volumes that have auto mount option set and have password or don't need it.
+	 */
 	for( auto&& it : z ){
 
 		const auto& e = it.volEntry ;
 
-		if( e.favorite.autoMount.True() && !e.password.isEmpty() ){
+		if( e.favorite().autoMount ){
 
-			m_volumes.emplace_back( std::move( it ) ) ;
+			if( it.engine->requiresNoPassword() ){
+
+				m_volumes.emplace_back( std::move( it ) ) ;
+
+			}else if( !e.password().isEmpty() ){
+
+				m_volumes.emplace_back( std::move( it ) ) ;
+			}else{
+				bb.emplace_back( std::move( it ) ) ;
+			}
 		}else{
-			b.emplace_back( std::move( it ) ) ;
+			bb.emplace_back( std::move( it ) ) ;
 		}
 	}
 
-	for( auto&& it : b ){
+	/*
+	 * We put second volumes that have password or don't need it.
+	 */
+	for( auto&& it : bb ){
+
+		const auto& e = it.volEntry ;
+
+		if( it.engine->requiresNoPassword() ){
+
+			m_volumes.emplace_back( std::move( it ) ) ;
+
+		}else if( !e.password().isEmpty() ){
+
+			m_volumes.emplace_back( std::move( it ) ) ;
+		}else{
+			cc.emplace_back( std::move( it ) ) ;
+		}
+	}
+
+	for( auto&& it : cc ){
 
 		m_volumes.emplace_back( std::move( it ) ) ;
 	}
@@ -133,13 +166,19 @@ keyDialog::keyDialog( QWidget * parent,
 
 void keyDialog::autoMount( const keyDialog::entry& ee )
 {
-	const auto& e = ee.volEntry.favorite ;
+	const auto& e = ee.volEntry.favorite() ;
 
-	if( e.volumeNeedNoPassword ){		
+	if( e.autoMount ){
 
-		this->openVolume() ;
-	}else{
-		if( e.autoMount.True() && !ee.volEntry.password.isEmpty() ){
+		if( e.volumeNeedNoPassword ){
+
+			this->openVolume() ;
+
+		}else if( !ee.volEntry.password().isEmpty() ){
+
+			this->openVolume() ;
+
+		}else if( ee.engine->requiresNoPassword() ){
 
 			this->openVolume() ;
 		}
@@ -309,7 +348,7 @@ void keyDialog::setUpInitUI()
 
 	m_ui->lineEditKey->setEchoMode( QLineEdit::Password ) ;
 
-	m_ui->cbKeyType->addItem( tr( "Key" ) ) ;
+	m_ui->cbKeyType->addItem( tr( "Password" ) ) ;
 	m_ui->cbKeyType->addItem( tr( "KeyFile" ) ) ;
 	m_ui->cbKeyType->addItem( tr( "Key+KeyFile" ) ) ;
 	m_ui->cbKeyType->addItem( tr( "HMAC+KeyFile" ) ) ;
@@ -378,9 +417,35 @@ void keyDialog::setVolumeToUnlock()
 	auto a = QString::number( m_counter ) ;
 	auto b = QString::number( m_volumes.size() ) ;
 
+	auto likeSsh = m_engine->known() && m_engine->likeSsh() ;
+
 	if( m_volumes.size() > 1 ){
 
-		this->windowSetTitle( tr( "(%1/%2) Unlocking \"%3\"" ).arg( a,b,m_path ) ) ;
+		if( likeSsh ){
+
+			const auto& m = m_engine.cipherFolder() ;
+
+			this->windowSetTitle( tr( "(%1/%2) Connecting To \"%3\"" ).arg( a,b,m ) ) ;
+
+			m_ui->pbOpen->setText( tr( "Connect" ) ) ;
+		}else{
+			m_ui->pbOpen->setText( tr( "Open" ) ) ;
+
+			this->windowSetTitle( tr( "(%1/%2) Unlocking \"%3\"" ).arg( a,b,m_path ) ) ;
+		}
+	}else{
+		if( likeSsh ){
+
+			const auto& m = m_engine.cipherFolder() ;
+
+			this->windowSetTitle( tr( "Connecting To \"%1\"" ).arg( m ) ) ;
+
+			m_ui->pbOpen->setText( tr( "Connect" ) ) ;
+		}else{
+			m_ui->pbOpen->setText( tr( "Open" ) ) ;
+
+			this->windowSetTitle( tr( "Unlocking \"%1\"" ).arg( m_path ) ) ;
+		}
 	}
 
 	this->autoMount( s ) ;
@@ -463,10 +528,10 @@ QString keyDialog::mountPointPath( const engines::engine& engine,
 void keyDialog::setUpVolumeProperties( const keyDialog::entry& ee )
 {
 	m_working          = false ;
-	const auto& e      = ee.volEntry.favorite ;
+	const auto& e      = ee.volEntry.favorite() ;
 	m_path             = e.volumePath ;
 	m_mountOptions     = e ;
-	m_favoriteReadOnly = e.readOnlyMode ;
+	m_favoriteReadOnly = e.readOnlyMode ;	
 
 	if( m_favoriteReadOnly.defined() ){
 
@@ -481,7 +546,7 @@ void keyDialog::setUpVolumeProperties( const keyDialog::entry& ee )
 		}
 	}
 
-	m_ui->lineEditKey->setText( ee.volEntry.password ) ;
+	m_ui->lineEditKey->setText( ee.volEntry.password() ) ;
 
 	this->setUIVisible( true ) ;
 
@@ -523,7 +588,18 @@ void keyDialog::setUpVolumeProperties( const keyDialog::entry& ee )
 
 		m->addSeparator() ;
 
+		m_enableUsingPassword = true ;
+
 		if( m_engine->known() ){
+
+			if( e.volumeNeedNoPassword || m_engine->requiresNoPassword() ){
+
+				m_enableUsingPassword = false ;
+			}
+
+			m_ui->cbKeyType->setEnabled( m_enableUsingPassword ) ;
+
+			m_ui->lineEditKey->setEnabled( m_enableUsingPassword ) ;
 
 			m_mountOptions.configFile = m_engine.configFilePath() ;
 
@@ -561,7 +637,7 @@ void keyDialog::setUpVolumeProperties( const keyDialog::entry& ee )
 
 		m_ui->pbOptions->setMenu( m ) ;
 
-		if( ee.volEntry.password.isEmpty() ){
+		if( m_ui->lineEditKey->isEnabled() && ee.volEntry.password().isEmpty() ){
 
 			m_ui->lineEditKey->setFocus() ;
 		}else{
@@ -602,8 +678,6 @@ void keyDialog::setDefaultUI()
 
 		m_ui->pbkeyOption->setVisible( false ) ;
 	}else{
-		this->windowSetTitle( tr( "Unlocking \"%1\"" ).arg( m_path ) ) ;
-
 		m_ui->label_3->setVisible( false ) ;
 
 		m_ui->lineEditMountPoint->setEnabled( true ) ;
@@ -802,11 +876,16 @@ void keyDialog::enableAll()
 	m_ui->pbCancel->setEnabled( true ) ;
 	m_ui->pbOpen->setEnabled( true ) ;
 	m_ui->label->setEnabled( true ) ;
-	m_ui->cbKeyType->setEnabled( true ) ;
+	m_ui->cbKeyType->setEnabled( m_enableUsingPassword ) ;
 
 	auto index = m_ui->cbKeyType->currentIndex() ;
 
-	m_ui->lineEditKey->setEnabled( this->keySelected( index ) ) ;
+	if( m_enableUsingPassword ){
+
+		m_ui->lineEditKey->setEnabled( this->keySelected( index ) ) ;
+	}else{
+		m_ui->lineEditKey->setEnabled( false ) ;
+	}
 
 	auto enable = index == keyDialog::keyfile || index == keyDialog::keyKeyFile ;
 
@@ -953,34 +1032,38 @@ void keyDialog::pbOpen()
 
 		auto wallet = m_ui->lineEditKey->text() ;
 
-		auto kde      = wallet == _kwallet() ;
-		auto gnome    = wallet == _gnomeWallet() ;
-		auto internal = wallet == _internalWallet() ;
-		auto osx      = wallet == _OSXKeyChain() ;
-		auto win      = wallet == _windowsDPAPI() ;
+		bool kde      = false ;
+		bool gnome    = false ;
+		bool internal = false ;
+		bool osx      = false ;
+		bool win      = false ;
 
-		/*
-		 * Figure out which wallet is used. Defaults to 'internal'
-		 */
 		using bk = LXQt::Wallet::BackEnd ;
 
-		bk bkwallet = LXQt::Wallet::BackEnd::internal ;
+		bk bkwallet ;
 
 		if( wallet == _kwallet() ){
 
+			kde = true ;
 			bkwallet = LXQt::Wallet::BackEnd::kwallet ;
 
 		}else if( wallet == _gnomeWallet() ){
 
+			gnome = true ;
 			bkwallet = LXQt::Wallet::BackEnd::libsecret ;
 
 		}else if( wallet == _OSXKeyChain() ){
 
+			osx = true ;
 			bkwallet = LXQt::Wallet::BackEnd::osxkeychain ;
 
 		}else if( wallet == _windowsDPAPI() ){
 
+			win = true ;
 			bkwallet = LXQt::Wallet::BackEnd::windows_dpapi ;
+		}else{
+			internal = true ;
+			bkwallet = LXQt::Wallet::BackEnd::internal ;
 		}
 
 		if( kde || gnome || osx ){
@@ -989,7 +1072,7 @@ void keyDialog::pbOpen()
 
 		}else if( internal || win ){
 
-			w = m_secrets.walletBk( LXQt::Wallet::BackEnd::internal ).getKey( m_path,this ) ;
+			w = m_secrets.walletBk( bkwallet ).getKey( m_path,this ) ;
 
 			if( w.notConfigured ){
 
@@ -1322,9 +1405,13 @@ void keyDialog::setKeyInWallet()
 
 			return m_secrets.walletBk( LXQt::Wallet::BackEnd::libsecret ) ;
 
-		}else if ( m_walletType == _OSXKeyChain() ){
+		}else if( m_walletType == _OSXKeyChain() ){
 
 			return m_secrets.walletBk( LXQt::Wallet::BackEnd::osxkeychain ) ;
+
+		}else if( m_walletType == _windowsDPAPI() ){
+
+			return m_secrets.walletBk( LXQt::Wallet::BackEnd::windows_dpapi ) ;
 		}else{
 			return m_secrets.walletBk( LXQt::Wallet::BackEnd::internal ) ;
 		}
@@ -1332,7 +1419,8 @@ void keyDialog::setKeyInWallet()
 
 	auto m = [ & ](){
 
-		if( w->backEnd() == LXQt::Wallet::BackEnd::internal ){
+		if( w->backEnd() == LXQt::Wallet::BackEnd::internal ||
+		    w->backEnd() == LXQt::Wallet::BackEnd::windows_dpapi ){
 
 			return w.openSync( [](){ return true ; },
 					   [ this ](){ this->hide() ; },
@@ -1355,7 +1443,7 @@ void keyDialog::setKeyInWallet()
 
 		if( w->readValue( id ).isEmpty() ){
 
-			if( favorites2::addKey( w,id,passphrase,"Nil" ).await() ){
+			if( favorites2::addKey( w,id,passphrase ).await() ){
 
 				m_ui->cbKeyType->setCurrentIndex( keyDialog::Key ) ;
 				m_ui->lineEditKey->setText( passphrase ) ;
@@ -1472,7 +1560,7 @@ void keyDialog::setKeyEnabled( bool e )
 	m_ui->labelSetKeyPassword->setEnabled( e ) ;
 	m_ui->lineEditSetKeyKeyFile->setEnabled( e ) ;
 	m_ui->lineEditSetKeyPassword->setEnabled( e ) ;
-	m_ui->pbSetKey->setEnabled( e ) ;
+	m_ui->pbSetKey->setEnabled( m_enableUsingPassword ) ;
 	m_ui->pbSetKeyCancel->setEnabled( e ) ;
 	m_ui->pbSetKeyKeyFile->setEnabled( e ) ;
 	m_ui->labelSetKey->setEnabled( e ) ;
@@ -1640,7 +1728,7 @@ void keyDialog::cbActicated( QString e )
 		m_ui->pbkeyOption->setVisible( !e ) ;
 	} ;
 
-	if( e == _t( tr( "Key" ) ) || e == _t( tr( "YubiKey Challenge/Response" ) ) ){
+	if( e == _t( tr( "Password" ) ) || e == _t( tr( "YubiKey Challenge/Response" ) ) ){
 
 		this->key() ;
 
@@ -1719,7 +1807,8 @@ void keyDialog::cbActicated( QString e )
 							 _t( _kwallet() ),
 							 _t( _gnomeWallet() ),
 							 _t( _internalWallet() ),
-							 _t( _OSXKeyChain() ) ) ){
+							 _t( _OSXKeyChain() ),
+							 _t( _windowsDPAPI() ) ) ){
 
 		if( m_ui->lineEditMountPoint->text().isEmpty() ){
 
@@ -1751,6 +1840,10 @@ void keyDialog::cbActicated( QString e )
 		}else if( e == _OSXKeyChain() ){
 
 			m_ui->lineEditKey->setText( _OSXKeyChain() ) ;
+
+		}else if( e == _windowsDPAPI() ){
+
+			m_ui->lineEditKey->setText( _windowsDPAPI() ) ;
 		}
 
 		_showVisibleKeyOption( false ) ;
@@ -1799,7 +1892,7 @@ void keyDialog::key()
 
 	m_ui->pbkeyOption->setIcon( QIcon( ":/passphrase.png" ) ) ;
 	m_ui->pbkeyOption->setEnabled( false ) ;
-	m_ui->label->setText( tr( "Key" ) ) ;
+	m_ui->label->setText( tr( "Password" ) ) ;
 	m_ui->lineEditKey->setEchoMode( QLineEdit::Password ) ;
 	m_ui->checkBoxVisibleKey->setChecked( false ) ;
 	m_ui->lineEditKey->clear() ;
