@@ -50,7 +50,6 @@ static engines::engine::BaseOptions _setOptions()
 	s.acceptsVolName        = true ;
 	s.releaseURL            = "https://api.github.com/repos/netheril96/securefs/releases" ;
 	s.passwordFormat        = "%{password}\n%{password}" ;
-	s.executableName        = "securefs" ;
 	s.incorrectPasswordText = "Invalid password" ;
 	s.configFileArgument    = "--config %{configFilePath}" ;
 	s.keyFileArgument       = "--keyfile %{keyfile}" ;
@@ -61,7 +60,9 @@ static engines::engine::BaseOptions _setOptions()
 	s.names                 = QStringList{ "securefs" } ;
 	s.failedToMountList     = QStringList{ "Error","init" } ;
 	s.successfulMountedList = QStringList{ "has been started","init" } ;
-	s.notFoundCode          = engines::engine::status::securefsNotFound ;
+	s.executableNames       = QStringList{ "securefs" } ;
+
+	s.notFoundCode          = engines::engine::status::engineExecutableNotFound ;
 	s.versionInfo           = { { "version",true,1,0 } } ;
 
 	if( utility::platformIsWindows() ){
@@ -133,20 +134,13 @@ void securefs::updateOptions( engines::engine::commandOptions& opts,
 	}
 }
 
-engines::engine::args securefs::command( const QByteArray& password,
-					 const engines::engine::cmdArgsList& args,
-					 bool create ) const
-{
-	return custom::set_command( *this,password,args,create ) ;
-}
-
 engines::engine::status securefs::errorCode( const QString& e,int s ) const
 {
 	Q_UNUSED( s )
 
 	if( e.contains( this->incorrectPasswordText() ) ){
 
-		return engines::engine::status::securefsBadPassword ;
+		return engines::engine::status::badPassword ;
 
 	}else if( e.contains( "SecureFS cannot load WinFsp" ) ){
 

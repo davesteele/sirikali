@@ -23,32 +23,12 @@
 #include "win.h"
 #include "settings.h"
 #include "sirikali.h"
+#include "processManager.h"
 
 #include <QDir>
 #include <QString>
 #include <QDebug>
 #include <QFile>
-
-static bool _create_folder( const QString& m )
-{
-	if( utility::pathExists( m ) ){
-
-		return settings::instance().reUseMountPoint() ;
-	}else{
-		return utility::createFolder( m ) ;
-	}
-}
-
-template< typename ... T >
-static void _deleteFolders( const T& ... m )
-{
-	QDir e ;
-
-	for( const auto& it : { m ... } ){
-
-		utility::removeFolder( it,1 ) ;
-	}
-}
 
 bool siritask::deleteMountFolder( const QString& m )
 {
@@ -171,7 +151,7 @@ static void _run_preUnmountCommand( const engines::engine::unMount& e )
 
 		s.append( e.cipherFolder ) ;
 		s.append( e.mountPoint ) ;
-		s.append( e.fileSystem ) ;
+		s.append( e.engine.name() ) ;
 
 		utility::Task::run( cmd,s,timeOut,false ).get() ;
 	}
@@ -179,18 +159,16 @@ static void _run_preUnmountCommand( const engines::engine::unMount& e )
 
 static engines::engine::cmdStatus _unmount( const engines::engine::unMount& e )
 {
-	const auto& engine = engines::instance().getByName( e.fileSystem ) ;
+	const auto& engine = e.engine ;
 
 	if( engine.unknown() ){
 
 		return { engines::engine::status::unknown,engine } ;
 	}
 
-	if( utility::platformIsWindows() ){
+	if( utility::platformIsWindows() || engine.runsInForeGround() ){
 
-		auto m = engine.windowsUnMountCommand() ;
-
-		auto s = SiriKali::Windows::unmount( m,e.mountPoint ) ;
+		auto s = processManager::get().remove( e.mountPoint ) ;
 
 		if( s.success() ){
 
@@ -219,6 +197,8 @@ engines::engine::cmdStatus siritask::encryptedFolderUnMount( const siritask::unm
 {
 	const auto& fav = favorites::instance().readFavorite( e.cipherFolder,e.mountPoint ) ;
 
+	const auto& fileSystem = e.engine.name() ;
+
 	if( fav.hasValue() ){
 
 		const auto& m = fav ;
@@ -226,18 +206,18 @@ engines::engine::cmdStatus siritask::encryptedFolderUnMount( const siritask::unm
 		auto& a = e.cipherFolder ;
 		auto& b = e.mountPoint ;
 
-		_run_command( { m.preUnmountCommand,a,b,e.fileSystem,"pre unmount",QByteArray() } ) ;
+		_run_command( { m.preUnmountCommand,a,b,fileSystem,"pre unmount",QByteArray() } ) ;
 
-		auto s = _unmount( { e.cipherFolder,e.mountPoint,e.fileSystem,e.numberOfAttempts } ) ;
+		auto s = _unmount( { e.cipherFolder,e.mountPoint,e.engine,e.numberOfAttempts } ) ;
 
 		if( s.success() ){
 
-			_run_command( { m.postUnmountCommand,a,b,e.fileSystem,"post unmount",QByteArray() } ) ;
+			_run_command( { m.postUnmountCommand,a,b,fileSystem,"post unmount",QByteArray() } ) ;
 		}
 
 		return s ;
 	}else{
-		return _unmount( { e.cipherFolder,e.mountPoint,e.fileSystem,e.numberOfAttempts }  ) ;
+		return _unmount( { e.cipherFolder,e.mountPoint,e.engine,e.numberOfAttempts }  ) ;
 	}
 }
 
@@ -265,9 +245,9 @@ struct run_task{
 
 static utility::Task _run_task_0( const run_task& e )
 {
-	if( utility::platformIsWindows() ){
+	if( utility::platformIsWindows() || e.engine.runsInForeGround() ){
 
-		return SiriKali::Windows::run( { e.create,e.args,e.opts,e.engine,e.password } ) ;
+		return processManager::get().run( { e.create,e.args,e.opts,e.engine,e.password } ) ;
 	}else{
 		const auto& s = e.engine.getProcessEnvironment() ;
 
@@ -278,7 +258,7 @@ static utility::Task _run_task_0( const run_task& e )
 				      e.password,
 				      [](){},
 				      e.engine.requiresPolkit(),
-				      e.engine.backendRunsInBackGround() ) ;
+				      e.engine.runsInBackGround() ) ;
 	}
 }
 
@@ -334,7 +314,7 @@ static engines::engine::cmdStatus _cmd( const cmd_args& e )
 	}else{
 		if( utility::platformIsWindows() ){
 
-			if( SiriKali::Windows::backEndTimedOut( s.stdOut() ) ){
+			if( processManager::backEndTimedOut( s.stdOut() ) ){
 
 				return { engines::engine::status::backendTimedOut,engine } ;
 			}
@@ -345,6 +325,65 @@ static engines::engine::cmdStatus _cmd( const cmd_args& e )
 		auto n = engine.errorCode( ss,s.exitCode() ) ;
 
 		return { n,engine,ss } ;
+	}
+}
+
+struct result_create_mp{
+
+	engines::engine::status status ;
+	bool deleteMp ;
+} ;
+
+static result_create_mp _create_mount_point( const engines::engine& engine,
+					     const engines::engine::cmdArgsList& opt,
+					     bool reUseMP )
+{
+	QString m ;
+
+	auto isDriveLetter = utility::isDriveLetter( opt.mountPoint ) ;
+
+	if( isDriveLetter ){
+
+		m = "1. Using a drive letter: " + opt.mountPoint ;
+	}else{
+		m = "1. Creating mount point at: " + opt.mountPoint ;
+	}
+
+	auto raii = utility2::make_raii( [ & ](){ utility::debug() << m ; } ) ;
+
+	if( isDriveLetter ){
+
+		return { engines::engine::status::success,false } ;
+
+	}else if( utility::pathExists( opt.mountPoint ) ){
+
+		if( reUseMP ){
+
+			m += "\n2. Mount point exists, using it" ;
+
+		}else if( settings::instance().reUseMountPoint() ){
+
+			m += "\n2. Mount point exists, re using it" ;
+		}else{
+			m += "\n2. Error: Mount point already exists" ;
+
+			return { engines::engine::status::failedToCreateMountPoint,false } ;
+		}
+
+		return { engines::engine::status::success,false } ;
+	}else{
+		m += "\n2. Mount point does not exist, creating it" ;
+
+		if( engine.createMountPath( opt.mountPoint ) ){
+
+			m += "\n3. Mount point created successfully" ;
+
+			return { engines::engine::status::success,true } ;
+		}else{
+			m += "\n3. Error: Failed to create mount point" ;
+
+			return { engines::engine::status::failedToCreateMountPoint,true } ;
+		}
 	}
 }
 
@@ -384,16 +423,18 @@ static engines::engine::cmdStatus _mount( const siritask::mount& s )
 
 			if( engine.backendRequireMountPath() ){
 
-				if( !( _create_folder( opt.mountPoint ) || s.reUseMP ) ){
+				auto m = _create_mount_point( engine,opt,s.reUseMP ) ;
 
-					return { engines::engine::status::failedToCreateMountPoint,engine } ;
+				if( m.status != engines::engine::status::success ){
+
+					return { m.status,engine } ;
 				}
 
 				auto e = _cmd( { engine,false,opt,opt.key } ) ;
 
-				if( e != engines::engine::status::success ){
+				if( e != engines::engine::status::success && m.deleteMp ){
 
-					utility::removeFolder( opt.mountPoint,5 ) ;
+					engine.deleteFolder( opt.mountPoint,5 ) ;
 				}
 
 				return e ;
@@ -425,16 +466,18 @@ static engines::engine::cmdStatus _create( const siritask::create& s )
 		return { mm,engine } ;
 	}
 
-	if( !_create_folder( opt.cipherFolder ) ){
+	if( !engine.createCipherPath( opt.cipherFolder ) ){
 
 		return { engines::engine::status::failedToCreateMountPoint,engine } ;
 	}
 
 	if( engine.backendRequireMountPath() ){
 
-		if( !_create_folder( opt.mountPoint ) ){
+		auto m = _create_mount_point( engine,opt,false ) ;
 
-			_deleteFolders( opt.cipherFolder ) ;
+		if( m.status != engines::engine::status::success ){
+
+			engine.deleteFolder( opt.cipherFolder ) ;
 
 			return { engines::engine::status::failedToCreateMountPoint,engine } ;
 		}
@@ -456,18 +499,20 @@ static engines::engine::cmdStatus _create( const siritask::create& s )
 
 				if( e.engine().backendRequireMountPath() ){
 
-					_deleteFolders( opt.mountPoint,opt.cipherFolder ) ;
+					engine.deleteFolder( opt.cipherFolder ) ;
+					engine.deleteFolder( opt.mountPoint ) ;
 				}else{
-					_deleteFolders( opt.cipherFolder ) ;
+					engine.deleteFolder( opt.cipherFolder ) ;
 				}
 			}
 		}
 	}else{
 		if( e.engine().backendRequireMountPath() ){
 
-			_deleteFolders( opt.mountPoint,opt.cipherFolder ) ;
+			engine.deleteFolder( opt.cipherFolder ) ;
+			engine.deleteFolder( opt.mountPoint ) ;
 		}else{
-			_deleteFolders( opt.cipherFolder ) ;
+			engine.deleteFolder( opt.cipherFolder ) ;
 		}
 	}
 

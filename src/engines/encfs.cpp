@@ -49,7 +49,6 @@ static engines::engine::BaseOptions _setOptions()
 	s.passwordFormat        = "%{password}\n%{password}" ;
 	s.reverseString         = "--reverse" ;
 	s.idleString            = "--idle=%{timeout}" ;
-	s.executableName        = "encfs" ;
 	s.incorrectPasswordText = "Error decoding volume key, password incorrect" ;
 	s.configFileArgument    = "--config=%{configFilePath}" ;
 	s.windowsInstallPathRegistryKey   = "SOFTWARE\\ENCFS" ;
@@ -58,10 +57,11 @@ static engines::engine::BaseOptions _setOptions()
 	s.volumePropertiesCommands        = QStringList{ "encfsctl %{cipherFolder}" } ;
 	s.configFileNames       = QStringList{ ".encfs6.xml","encfs6.xml",".encfs5",".encfs4" } ;
 	s.fuseNames             = QStringList{ "fuse.encfs" } ;
+	s.executableNames       = QStringList{ "encfs" } ;
 	s.names                 = QStringList{ "encfs","encfsctl" } ;
 	s.failedToMountList     = QStringList{ "Error" } ;
 	s.successfulMountedList = QStringList{ "has been started" } ;
-	s.notFoundCode          = engines::engine::status::encfsNotFound ;
+	s.notFoundCode          = engines::engine::status::engineExecutableNotFound ;
 	s.versionInfo           = { { "--version",false,2,0 } } ;
 
 	if( utility::platformIsWindows() ){
@@ -101,7 +101,7 @@ engines::engine::args encfs::command( const QByteArray& password,
 		m_environment.insert( "ENCFS6_CONFIG",m_configPathThroughEnv ) ;
 	}
 
-	return custom::set_command( *this,password,args,create ) ;
+	return engines::engine::command( password,args,create ) ;
 }
 
 engines::engine::status encfs::errorCode( const QString& e,int s ) const
@@ -110,7 +110,7 @@ engines::engine::status encfs::errorCode( const QString& e,int s ) const
 
 	if( e.contains( this->incorrectPasswordText() ) ){
 
-		return engines::engine::status::encfsBadPassword ;
+		return engines::engine::status::badPassword ;
 
 	}else if( e.contains( "cygfuse: initialization failed: winfsp" ) ){
 

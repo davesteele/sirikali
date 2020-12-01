@@ -144,10 +144,11 @@ namespace utility2
 
 namespace utility2
 {
+	template< typename Function >
 	class raii
 	{
 	public:
-		raii( std::function< void() > s ) : m_function( std::move( s ) )
+		raii( Function s ) : m_function( std::move( s ) )
 		{
 		}
 		~raii()
@@ -163,8 +164,14 @@ namespace utility2
 		}
 	private:
 		bool m_run = true ;
-		std::function< void() > m_function ;
+		Function m_function ;
 	};
+
+	template< typename Function >
+	static utility2::raii< Function > make_raii( Function function )
+	{
+		return raii< Function >( std::move( function ) ) ;
+	}
 
 	template< typename T >
 	class result
@@ -221,6 +228,35 @@ namespace utility2
 		bool m_valid = false ;
 		T m_value ;
 	} ;
+}
+
+namespace utility2
+{
+	template< typename Object,typename MemberFunction >
+	class mem_fn{
+	public:
+		mem_fn()
+		{
+		}
+		mem_fn( Object * pointerToObject,MemberFunction objectMemberFunction ) :
+			m_object( pointerToObject ),m_memberFunction( objectMemberFunction )
+		{
+		}
+		template< typename ... Args >
+		auto operator()( Args&& ... args ) const
+		{
+			return ( m_object->*m_memberFunction )( std::forward< Args >( args ) ... ) ;
+		}
+	private:
+		Object * m_object ;
+		MemberFunction m_memberFunction ;
+	} ;
+
+	template< typename Object,typename MemberFunction >
+	auto make_mem_fn( Object t,MemberFunction m )
+	{
+		return utility2::mem_fn< std::remove_pointer_t< Object >,MemberFunction >( t,m ) ;
+	}
 }
 
 #endif

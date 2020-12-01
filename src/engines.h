@@ -38,6 +38,7 @@ class engines
 public:
 	class engine ;
 
+	static QString executableNotEngineFullPath( const QString& ) ;
 	static QString executableFullPath( const QString& ) ;
 	static QString executableFullPath( const QString&,const engines::engine& ) ;
 
@@ -212,7 +213,7 @@ public:
 
 			const QString& cipherFolder ;
 			const QString& mountPoint ;
-			const QString& fileSystem ;
+			const engines::engine& engine ;
 			int numberOfAttempts ;
 		} ;
 
@@ -278,41 +279,32 @@ public:
 			volumeCreatedSuccessfully,
 
 			backendRequiresPassword,
+			badPassword,
 
-			cryfsBadPassword,
-			encfsBadPassword,
-			sshfsBadPassword,
-			gocryptfsBadPassword,
-			securefsBadPassword,
-			ecryptfsBadPassword,
-			fscryptBadPassword,
-
-			sshfsNotFound,
-			cryfsNotFound,
-			encfsNotFound,
-			fscryptNotFound,
-			securefsNotFound,
-			gocryptfsNotFound,
 			ecryptfs_simpleNotFound,
-
-			customCommandNotFound,
-			customCommandBadPassword,
+			engineExecutableNotFound,
+			javaNotFound,
 
 			cryfsMigrateFileSystem,
 			cryfsReplaceFileSystem,
 			cryfsVersionTooOldToMigrateVolume,
+
+			backEndDoesNotSupportCustomConfigPath,
 			notSupportedMountPointFolderPath,
 			mountPointFolderNotEmpty,
 			IllegalPath,
 
+		        backendFailedToMeetSiriKaliMinimumVersion,
+			backEndFailedToMeetMinimumRequirenment,
+
 			fscryptPartialVolumeClose,
 			failedToLoadWinfsp,
 			fscryptKeyFileRequired,
-			backEndFailedToMeetMinimumRequirenment,
+
 			failedToStartPolkit,
 			failedToUnMount,
-			backEndDoesNotSupportCustomConfigPath,
 			failedToCreateMountPoint,
+
 			invalidConfigFileName,
 			backendFail,
 			backendTimedOut,
@@ -400,7 +392,6 @@ public:
 		struct mountGUIOptions{
 
 			struct mountOptions{
-				mountOptions( const volumeInfo& ) ;
 
 				mountOptions( const favorites::entry& ) ;
 
@@ -508,9 +499,9 @@ public:
 			QString displayName ;
 			QString releaseURL ;
 			QString versionMinimum ;
+			QString sirikaliMinimumVersion ;
 			QString reverseString ;
 			QString idleString ;
-			QString executableName ;
 			QString incorrectPasswordText ;
 			QString incorrectPassWordCode ;
 			QString configFileArgument ;
@@ -520,8 +511,9 @@ public:
 			QString windowsExecutableFolderPath ;
 			QString mountControlStructure ;
 			QString createControlStructure ;
-			QString sshOptions ;
+			QString defaultFavoritesMountOptions ;
 
+			QStringList executableNames ;
 			QStringList windowsUnMountCommand ;
 			QStringList unMountCommand ;
 			QStringList volumePropertiesCommands ;
@@ -570,7 +562,8 @@ public:
 		bool customBackend() const ;
 		bool autorefreshOnMountUnMount() const ;
 		bool backendRequireMountPath() const ;
-		bool backendRunsInBackGround() const ;
+		bool runsInBackGround() const ;
+		bool runsInForeGround() const ;
 		bool acceptsSubType() const ;
 		bool acceptsVolName() const ;
 		bool likeSsh() const ;
@@ -579,6 +572,7 @@ public:
 		bool requiresAPassword() const ;
 		bool requiresNoPassword() const ;
 		bool usesOnlyMountPoint() const ;
+		bool needsJava() const ;
 
 		engines::engine::status notFoundCode() const ;
 
@@ -594,9 +588,14 @@ public:
 
 		const engines::version& installedVersion() const ;
 
-		const QString& sshOptions() const ;
+		const QString& defaultFavoritesMountOptions() const ;
+
 		const QString& executableFullPath() const ;
+		const QString& javaFullPath() const ;
+		const QString& fuserMountPath() const ;
+
 		const QString& minimumVersion() const ;
+		const QString& sirikaliMinimumVersion() const ;
 		const QString& reverseString() const ;
 		const QString& idleString() const ;
 		const QString& releaseURL() const ;
@@ -620,6 +619,23 @@ public:
 		engine( BaseOptions ) ;
 
 		virtual ~engine() ;
+
+		struct terminate_process{
+
+			QProcess& exe ;
+			const QString& mountPath ;
+		};
+
+		struct terminate_result{
+
+			Task::process::result result ;
+			QString exe ;
+			QStringList args ;
+		} ;
+
+		virtual terminate_result terminateProcess( const terminate_process& ) const ;
+
+		virtual terminate_result terminateProcess( const QString& mountPath ) const ;
 
 		virtual engine::engine::error errorCode( const QString& ) const ;
 
@@ -653,9 +669,19 @@ public:
 
 		virtual void updateOptions( engines::engine::cmdArgsList&,bool creating ) const ;
 
+		virtual void updateOptions( QStringList&,
+					    const engines::engine::cmdArgsList&,
+					    bool creating ) const ;
+
 		virtual const QProcessEnvironment& getProcessEnvironment() const ;
 
 		virtual bool requiresPolkit() const ;
+
+		virtual bool createMountPath( const QString& ) const ;
+
+		virtual bool createCipherPath( const QString& ) const ;
+
+		virtual bool deleteFolder( const QString&,int = 1 ) const ;
 
 		virtual args command( const QByteArray& password,
 				      const engines::engine::cmdArgsList& args,
@@ -796,6 +822,8 @@ public:
 		const QProcessEnvironment m_processEnvironment ;
 		const engines::exeFullPath m_exeFullPath ;
 		const engines::version m_version ;
+		static engines::exeFullPath m_exeJavaFullPath ;
+		static engines::exeFullPath m_exeFuserMount ;
 	} ;
 
 	engines() ;

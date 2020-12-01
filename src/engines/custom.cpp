@@ -51,12 +51,11 @@ static void _parse( engines::engine::BaseOptions& s,const SirikaliJson& json )
 
 	s.passwordFormat                  = json.getByteArray( "passwordFormat","%{password}" ) ;
 
-	s.sshOptions                      = json.getString( "sshOptions" ) ;
+	s.defaultFavoritesMountOptions    = json.getString( "defaultFavoritesMountOptions" ) ;
 	s.mountControlStructure           = json.getString( "mountControlStructure","%{mountOptions} %{cipherFolder} %{mountPoint} %{fuseOpts}" ) ;
 	s.createControlStructure          = json.getString( "createControlStructure" ) ;
 	s.reverseString                   = json.getString( "reverseString" ) ;
 	s.idleString                      = json.getString( "idleString" ) ;
-	s.executableName                  = json.getString( "executableName" ) ;
 	s.incorrectPasswordText           = json.getString( "wrongPasswordText" ) ;
 	s.incorrectPassWordCode           = json.getString( "wrongPasswordErrorCode" ) ;
 	s.configFileArgument              = json.getString( "configFileArgument" ) ;
@@ -66,11 +65,14 @@ static void _parse( engines::engine::BaseOptions& s,const SirikaliJson& json )
 	s.windowsExecutableFolderPath     = json.getString( "windowsExecutableFolderPath" ) ;
 	s.displayName                     = json.getString( "displayName" ) ;
 	s.versionMinimum                  = json.getString( "versionMinimum" ) ;
+	s.sirikaliMinimumVersion          = json.getString( "sirikaliMinimumVersion" ) ;
+
+	s.executableNames                 = QStringList{ json.getString( "executableName" ) } ;
 
 	s.windowsUnMountCommand           = json.getStringList( "windowsUnMountCommand" ) ;
 	s.unMountCommand                  = json.getStringList( "unMountCommand" ) ;
-	s.failedToMountList               = json.getStringList( "failedToMountTextList" ) ;
-	s.successfulMountedList           = json.getStringList( "windowsSuccessfullyMountedList" ) ;
+	s.failedToMountList               = json.getStringList( "stringsToCheckForFailedMount" ) ;
+	s.successfulMountedList           = json.getStringList( "stringsToCheckForSuccessfulMount" ) ;
 	s.configFileNames                 = json.getStringList( "configFileNames" ) ;
 	s.names                           = json.getStringList( "names" ) ;
 	s.fuseNames                       = json.getStringList( "fuseNames" ) ;
@@ -78,7 +80,7 @@ static void _parse( engines::engine::BaseOptions& s,const SirikaliJson& json )
 	s.volumePropertiesCommands        = json.getStringList( "volumePropertiesCommands" ) ;
 	s.hasConfigFile                   = s.configFileNames.size() > 0 ;
 
-	s.notFoundCode                    = engines::engine::status::customCommandNotFound ;
+	s.notFoundCode                    = engines::engine::status::engineExecutableNotFound ;
 
 	auto versionArgumentString        = json.getString( "versionArgumentString" ) ;
 	auto versionOutputStdOut          = json.getBool( "versionOutputStdOut",true ) ;
@@ -177,258 +179,6 @@ custom::custom( engines::engine::BaseOptions baseOpts ) :
 {
 }
 
-struct resolveStruct{
-	const engines::engine& engine ;
-	const QString& controlStructure ;
-	const engines::engine::cmdArgsList& args ;
-	const QByteArray& password ;
-	const QStringList& opts ;
-	const QStringList& fuseOpts ;
-} ;
-
-class resolve{
-public:
-	struct args{
-		const char * first ;
-		const QString& second ;
-	} ;
-	template< typename ... T >
-	resolve( T&& ... e )
-	{
-		this->set( std::forward< T >( e ) ... ) ;
-	}
-	QString option( QString a ) const
-	{
-		for( const auto& it : m_opts ){
-
-			if( !it.second.isEmpty() ){
-
-				a.replace( it.first,it.second ) ;
-			}
-		}
-
-		for( const auto& it : m_opts ){
-
-			if( a.contains( it.first ) ) {
-
-				return {} ;
-			}
-		}
-
-		return a ;
-	}
-private:
-	template< typename T >
-	void set( T&& t )
-	{
-		m_opts.emplace_back( std::forward< T >( t ) ) ;
-	}
-	template< typename E,typename ... T >
-	void set( E&& e,T&& ... t )
-	{
-		this->set( std::forward< E >( e ) ) ;
-		this->set( std::forward< T >( t ) ... ) ;
-	}
-	std::vector< resolve::args > m_opts ;
-};
-
-class replace{
-public:
-	replace( QStringList& s,int position ) :
-		m_stringList( s ),m_position( position )
-	{
-	}
-	void set( const QString& e )
-	{
-		m_stringList.insert( m_position,e ) ;
-	}
-	void set( const QStringList& e )
-	{
-		for( int i = e.size() - 1 ; i >= 0 ; i-- ){
-
-			m_stringList.insert( m_position,e.at( i ) ) ;
-		}
-	}
-private:
-	QStringList& m_stringList ;
-	int m_position ;
-};
-
-template< typename ... T >
-static void _resolve( QStringList& orgs,
-		      const QString& name,
-		      const QString& controlStructure,
-		      T&& ... rrr )
-{	
-	if( controlStructure.isEmpty() ){
-
-		return ;
-	}
-
-	resolve rr( std::forward< T >( rrr ) ... ) ;
-
-	auto m = utility::split( controlStructure,' ' ) ;
-
-	if( m.size() == 1 ){
-
-		auto a = rr.option( m.at( 0 ) ) ;
-
-		if( !a.isEmpty() ){
-
-			orgs.append( a ) ;
-		}
-
-	}else if( m.size() == 2 ){		
-
-		auto a = rr.option( m.at( 1 ) ) ;
-
-		if( !a.isEmpty() ){
-
-			orgs.append( m.at( 0 ) ) ;
-			orgs.append( a ) ;
-		}
-	}else{
-		auto s = QString( "Wrong control structure detected in custom backend named \"%1\"." ) ;
-		utility::debug::logErrorWhileStarting( s.arg( name ) ) ;
-	}
-}
-
-static QStringList _replace_opts( const resolveStruct& r )
-{
-	auto opts = r.opts ;
-
-	_resolve( opts,
-		  r.engine.name(),
-		  r.engine.configFileArgument(),
-		  resolve::args{ "%{cipherFolder}",r.args.cipherFolder },
-		  resolve::args{ "%{configFileName}",r.engine.configFileName() },
-		  resolve::args{ "%{configFilePath}",r.args.configFilePath } ) ;
-
-	_resolve( opts,
-		  r.engine.name(),
-		  r.engine.keyFileArgument(),
-		  resolve::args{ "%{keyfile}",r.args.keyFile } ) ;
-
-	_resolve( opts,
-		  r.engine.name(),
-		  r.engine.idleString(),
-		  resolve::args{ "%{timeout}",r.args.idleTimeout } ) ;
-
-	return opts ;
-}
-
-template< typename Function >
-static void _replace_opts( QStringList& mm,
-			    const char * controlStructure,
-			    Function function )
-{
-	for( int i = 0 ; i < mm.size() ; i++ ){
-
-		auto& it = mm[ i ] ;
-
-		if( it == controlStructure ){
-
-			mm.removeAt( i ) ;
-
-			function( { mm,i } ) ;
-
-			break ;
-		}
-	}
-}
-
-static QStringList _resolve( const resolveStruct& r )
-{
-	auto mm = utility::split( r.controlStructure,' ' ) ;
-
-	_replace_opts( mm,"%{cipherFolder}",[ & ]( replace s ){
-
-		s.set( r.args.cipherFolder )  ;
-	} ) ;
-
-	_replace_opts( mm,"%{mountPoint}",[ & ]( replace s ){
-
-		s.set( r.args.mountPoint ) ;
-	} ) ;
-
-	_replace_opts( mm,"%{password}",[ & ]( replace s ){
-
-		s.set( r.password ) ;
-	} ) ;
-
-	_replace_opts( mm,"%{fuseOpts}",[ & ]( replace s ){
-
-		if( !r.fuseOpts.isEmpty() ){
-
-			if( r.args.fuseOptionsSeparator.isEmpty() ){
-
-				s.set( { "-o",r.fuseOpts.join( ',' ) } ) ;
-			}else{
-				s.set( { r.args.fuseOptionsSeparator,"-o",r.fuseOpts.join( ',' ) } ) ;
-			}
-		}
-	} ) ;
-
-	_replace_opts( mm,"%{createOptions}",[ & ]( replace s ){
-
-		s.set( _replace_opts( r ) ) ;
-	} ) ;
-
-	_replace_opts( mm,"%{mountOptions}",[ & ]( replace s ){
-
-		auto opts = _replace_opts( r ) ;
-
-		if( r.args.boolOptions.unlockInReverseMode ){
-
-			opts.append( r.engine.reverseString() ) ;
-		}
-
-		s.set( opts ) ;
-	} ) ;
-
-	mm.removeAll( QString() ) ;
-
-	return mm ;
-}
-
-engines::engine::args custom::set_command( const engines::engine& engine,
-					   const QByteArray& password,
-					   const engines::engine::cmdArgsList& args,
-					   bool create )
-{
-	engines::engine::commandOptions m( create,engine,args ) ;
-
-	if( create ){
-
-		auto opts = args.createOptions + m.exeOptions().get() ;
-
-		auto s = _resolve( { engine,
-				     engine.createControlStructure(),
-				     args,
-				     password,
-				     opts,
-				     m.fuseOpts().get() } ) ;
-
-		return { args,m,engine.executableFullPath(),s } ;
-	}else{
-		auto s = _resolve( { engine,
-				     engine.mountControlStructure(),
-				     args,
-				     password,
-				     m.exeOptions().get(),
-				     m.fuseOpts().get() } ) ;
-
-		return { args,m,engine.executableFullPath(),s } ;
-	}
-}
-
-engines::engine::args custom::command( const QByteArray& password,
-				       const engines::engine::cmdArgsList& args,
-				       bool create ) const
-{
-	return custom::set_command( *this,password,args,create ) ;
-}
-
 engines::engine::status custom::errorCode( const QString& e,int s ) const
 {
 	const auto& m = this->incorrectPasswordCode() ;
@@ -441,7 +191,7 @@ engines::engine::status custom::errorCode( const QString& e,int s ) const
 
 		if( ok && n == s ){
 
-			return engines::engine::status::customCommandBadPassword ;
+			return engines::engine::status::badPassword ;
 		}else{
 			return engines::engine::status::backendFail ;
 		}
@@ -450,7 +200,7 @@ engines::engine::status custom::errorCode( const QString& e,int s ) const
 
 		if( !s.isEmpty() && e.contains( s ) ){
 
-			return engines::engine::status::customCommandBadPassword ;
+			return engines::engine::status::badPassword ;
 
 		}else if( e.contains( "cannot load WinFsp" ) ){
 

@@ -48,6 +48,7 @@
 #include <array>
 #include <utility>
 #include <vector>
+#include <type_traits>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -60,6 +61,7 @@
 #include "secrets.h"
 #include "utility2.h"
 #include "debugwindow.h"
+#include "version.h"
 
 #include <QObject>
 #include <QLabel>
@@ -320,6 +322,8 @@ namespace utility
 
 	QStringList directoryList( const QString& e ) ;
 
+	QString SiriKaliVersion() ;
+
 	QString freeWindowsDriveLetter() ;
 	bool isDriveLetter( const QString& ) ;
 	bool startsWithDriveLetter( const QString& ) ;
@@ -383,8 +387,11 @@ namespace utility
 		QWidget * m_widget ;
 	};
 
-	//Function must take an int and return a bool
-	template< typename Function >
+	/*
+	 * Function must take an int and must return bool
+	 */
+	template< typename Function,
+		  std::enable_if_t< std::is_same< std::result_of_t< Function( int ) >,bool >::value,int > = 0 >
 	static inline void Timer( int interval,Function&& function )
 	{
 		class Timer{
@@ -418,15 +425,21 @@ namespace utility
 		new Timer( interval,std::forward< Function >( function ) ) ;
 	}
 
-	static inline void Timer( int interval,std::function< bool( void ) >&& function )
+	/*
+	 * Function must takes no argument and must returns void and it will
+	 * be called once when the interval pass
+	 */
+	template< typename Function,
+		  std::enable_if_t< std::is_void< std::result_of_t< Function() > >::value,int > = 0 >
+	static inline void Timer( int interval,Function&& function )
 	{
-		using ff = std::function< bool( void ) > ;
-
-		utility::Timer( interval,[ function = std::forward< ff >( function ) ]( int s ){
+		utility::Timer( interval,[ function = std::forward< Function >( function ) ]( int s ){
 
 			Q_UNUSED( s )
 
-			return function() ;
+			function() ;
+
+			return true ;
 		} ) ;
 	}
 
@@ -441,15 +454,14 @@ namespace utility
 	bool pathIsReadable( const QString&,bool isFolder = true ) ;
 	bool pathIsWritable( const QString&,bool isFolder = true ) ;
 
-	QString securefsPath() ;
-	QString winFSPpath() ;
+	QString userName() ;
+	QString userIDAsString() ;
+	int userID() ;
 
 	const QProcessEnvironment& systemEnvironment() ;
 
 	QString likeSshaddPortNumber( const QString& path,const QString& port ) ;
 	QString likeSshRemovePortNumber( const QString& path ) ;
-
-	QString userName() ;
 
 	QString configFilePath( QWidget *,const QString& ) ;
 

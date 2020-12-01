@@ -67,9 +67,9 @@ static QString _get_fs_mode( const volumeInfo::List& s,const QString& m )
 {
 	for( const auto& it : s ){
 
-		if( m.startsWith( it.mountPoint ) ){
+		if( m.startsWith( it.mountPoint() ) ){
 
-			return it.mode ;
+			return it.mode() ;
 		}
 	}
 
@@ -163,6 +163,8 @@ static volumeInfo::List _mountInfo( const mountInfo& e,Function removeEntry )
 	const auto& a = e.fuseNames.at( 0 ) ;
 	const auto& b = e.fuseNames.at( 1 ) ;
 
+	auto userID = "user_id=" + utility::userIDAsString() ;
+
 	for( const auto& it : e.mountedVolumes ){
 
 		auto tt = engines::engine::decodeSpecialCharactersConst( it ) ;
@@ -175,11 +177,11 @@ static volumeInfo::List _mountInfo( const mountInfo& e,Function removeEntry )
 
 			if( s == "Yes" ){
 
-				l.emplace_back( it,it,a,md ) ;
+				l.emplace_back( it,it,a,md,userID ) ;
 
 			}else if( s.startsWith( "Partially" ) ){
 
-				l.emplace_back( it,it,b,md ) ;
+				l.emplace_back( it,it,b,md,userID ) ;
 			}else{
 				removeEntry( it ) ;
 			}
@@ -311,13 +313,13 @@ static engines::engine::BaseOptions _setOptions()
 	s.setsCipherPath        = true ;
 	s.releaseURL            = "https://api.github.com/repos/google/fscrypt/releases" ;
 	s.passwordFormat        = "%{password}" ;
-	s.executableName        = "fscrypt" ;
 	s.incorrectPasswordText = "incorrect key provided" ;
+	s.executableNames       = QStringList{ "fscrypt" } ;
 	s.fuseNames             = QStringList{ "fscrypt","fscrypt*" } ;
 	s.failedToMountList     = QStringList{ "Error" } ;
 	s.names                 = QStringList{ "fscrypt","fscrypt*" } ;
 	s.volumePropertiesCommands = QStringList{ "fscrypt status %{plainFolder}" } ;
-	s.notFoundCode             = engines::engine::status::fscryptNotFound ;
+	s.notFoundCode             = engines::engine::status::engineExecutableNotFound ;
 	s.versionInfo              = { { "--version",true,2,0 },    // for fscrypt >= 0.2.7
 				       { "--version",true,0,2 } } ; // for fscrypt < 0.2.7
 
@@ -501,20 +503,13 @@ void fscrypt::updateOptions( engines::engine::cmdArgsList& args,bool creating ) 
 	}
 }
 
-engines::engine::args fscrypt::command( const QByteArray& password,
-					const engines::engine::cmdArgsList& args,
-					bool create ) const
-{
-	return custom::set_command( *this,password,args,create ) ;
-}
-
 engines::engine::status fscrypt::errorCode( const QString& e,int s ) const
 {
 	Q_UNUSED( s )
 
 	if( e.contains( this->incorrectPasswordText() ) ){
 
-		return engines::engine::status::fscryptBadPassword ;
+		return engines::engine::status::badPassword ;
 
 	}else if( e.contains( "fscrypt unlock: no key file specified" ) ){
 

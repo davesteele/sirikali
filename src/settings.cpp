@@ -520,6 +520,16 @@ int settings::mountMonitorFolderPollingInterval()
 	return m_settings.value( "MountMonitorFolderPollingInterval" ).toInt() ;
 }
 
+int settings::delayBeforeAutoMountAtStartup()
+{
+	if( !m_settings.contains( "DelayBeforeAutoMountAtStartup" ) ){
+
+		m_settings.setValue( "DelayBeforeAutoMountAtStartup",1 ) ;
+	}
+
+	return m_settings.value( "DelayBeforeAutoMountAtStartup" ).toInt() ;
+}
+
 bool settings::readFavorites( QMenu * m )
 {
 	m->clear() ;
@@ -1026,6 +1036,16 @@ bool settings::showMountDialogWhenAutoMounting()
 		settings::showMountDialogWhenAutoMounting( true ) ;
 		return true ;
 	}
+}
+
+bool settings::showUnlockedVolumesFromAllUsers()
+{
+	if( !m_settings.contains( "ShowUnlockedVolumesFromAllUsers" ) ){
+
+		m_settings.setValue( "ShowUnlockedVolumesFromAllUsers",false ) ;
+	}
+
+	return m_settings.value( "ShowUnlockedVolumesFromAllUsers" ).toBool() ;
 }
 
 void settings::showMountDialogWhenAutoMounting( bool e )

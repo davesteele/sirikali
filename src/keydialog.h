@@ -1,4 +1,4 @@
-/*
+﻿/*
  *
  *  Copyright (c) 2012-2015
  *  name : Francis Banyikwa
@@ -45,6 +45,8 @@ class QTableWidget ;
 #include <functional>
 #include <memory>
 #include <vector>
+
+#include <QComboBox>
 
 class cryfsWarning : public QObject
 {
@@ -177,6 +179,39 @@ public:
 
 	using volumeList = std::vector< entry > ;
 
+	static volumeList fromFavoritesList( favorites::volumeList s,
+					     bool earlyBoot,
+					     bool skipUnknown )
+	{
+		keyDialog::volumeList m ;
+
+		for( auto&& it : s ){
+
+			const auto& f = it.favorite() ;
+
+			engines::engineWithPaths e( f.volumePath,f.configFilePath ) ;
+
+			if( e->known() ){
+
+				m.emplace_back( std::move( it ),std::move( e ) ) ;
+
+			}else if( skipUnknown ){
+
+				utility::debug() << "Not Adding Not Available Volume: " + f.volumePath ;
+
+			}else if( !earlyBoot ){
+
+				utility::debug() << "Unknown Volume Type Detected: " + f.volumePath ;
+
+				m.emplace_back( std::move( it ),std::move( e ) ) ;
+			}else{
+				utility::debug() << "Skipping Not Available Volume: " + f.volumePath ;
+			}
+		}
+
+		return m ;
+	}
+
 	static QString keyFileError() ;
 
 	static QString mountPointPath( const engines::engine& engine,
@@ -234,19 +269,13 @@ private slots:
 	void cbVisibleKeyStateChanged( int ) ;
 	void textChanged( QString ) ;
 	void passWordTextChanged( QString ) ;
-	void cbActicated( QString ) ;
 	void pbOptions( void ) ;
 	void pbkeyOption( void ) ;
 	void pbMountPointPath( void ) ;
 	void pbFolderPath( void ) ;
 	void pbOK( void ) ;
-	void plugIn( void ) ;
-	void key( void ) ;
-	void keyFile( void ) ;
-	void HMACKeyFile( void ) ;
 	void pbOpen( void ) ;
 	void pbCancel( void ) ;
-	void KeyFile( void ) ;
 	void cbMountReadOnlyStateChanged( int ) ;
 	void encryptedFolderMount( void ) ;
 	void encryptedFolderCreate( void ) ;
@@ -254,6 +283,9 @@ private slots:
 	void pbSetKey( void ) ;
 	void pbSetKeyCancel( void ) ;
 private :	
+	void key( void ) ;
+	void yubiKey( void ) ;
+	void secretStorage( void ) ;
 	void autoMount( const keyDialog::entry& ee ) ;
 	void unlockVolume( void ) ;
 	void setVolumeToUnlock() ;
@@ -270,9 +302,8 @@ private :
 	void showErrorMessage( const QString& ) ;
 	void reportErrorMessage( const engines::engine::cmdStatus& ) ;
 	void openMountPoint( const QString& ) ;
-
+	void keyFile( void ) ;
 	void setUIVisible( bool ) ;
-	void keyAndKeyFile( void ) ;
 	void openVolume( void ) ;
 	void enableAll( void ) ;
 	void disableAll( void ) ;
@@ -281,6 +312,8 @@ private :
 
 	bool upgradingFileSystem( void ) ;
 	bool replaceFileSystem( void ) ;
+
+	void keyTypeChanged() ;
 
 	bool mountedAll() ;
 	bool completed( const engines::engine::cmdStatus&,const QString& m ) ;
@@ -322,10 +355,6 @@ private :
 
 	keystrength m_keyStrength ;
 
-	typedef enum{ Key = 0,keyfile = 1,hmacKeyFile = 2,keyKeyFile = 3,Plugin = 4,yubikey = 5 } keyType ;
-
-	keyType m_keyType ;
-
 	QWidget * m_parentWidget ;
 
 	std::function< void() > m_cancel = [](){} ;
@@ -337,6 +366,69 @@ private :
 	cryfsWarning m_warningLabel ;
 
 	size_t m_counter = 0 ;
+
+	class keyType{
+	public:
+		keyType() ;
+
+		enum class name{ Key,
+				 keyfile,
+				 hmacKeyFile,
+				 keyKeyFile,
+				 internalWallet,
+				 libsecret,
+				 kdewallet,
+				 osxkeychain,
+				 windowsdpapi,
+				 yubikey,
+				 externalExecutable } ;
+
+		void setType( keyType::name s ) ;
+		bool key() const ;
+		void setAsKey() ;
+		bool keyFile() const ;
+		bool hmacKeyFile() const;
+		bool keyKeyFile() const ;
+		bool yubikey() const ;
+		bool exernalExecutable() const ;
+		void setEnabled( bool ) ;
+		const QString& toString( keyType::name ) const ;
+		const QString& toString() const ;
+		keyType::name type() const ;
+		template< typename T >
+		bool equals( T t )
+		{
+			return this->type() == t ;
+		}
+		template< typename T >
+		bool equalsAtLeastOne( T t )
+		{
+			return this->equals( t ) ;
+		}
+		template< typename E,typename ... T >
+		bool equalsAtLeastOne( E e,T ... t )
+		{
+			if( this->equals( e ) ){
+
+				return true ;
+			}else{
+				return this->equalsAtLeastOne( t ... ) ;
+			}
+		}
+		bool containsSecretStorage() const ;
+		void keyOptions( QComboBox *,keyDialog *,void( keyDialog::* )() ) ;
+	private:
+		size_t currentIndex() const ;
+		void addItem( keyType::name,const QString& ) ;
+		struct position
+		{
+			size_t index ;
+			keyType::name typeKey ;
+			QString keyName ;
+		} ;
+		std::vector< position > m_entries ;
+		QComboBox * m_comboBox ;
+	} m_keyType ;
 
 	struct walletKey
 	{

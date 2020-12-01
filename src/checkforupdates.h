@@ -20,6 +20,10 @@
 #ifndef CHECKFORUPDATES_H
 #define CHECKFORUPDATES_H
 
+#include "network_support.h"
+
+#if HAS_NETWORK_SUPPORT
+
 #include <QFile>
 #include <QObject>
 #include <QWidget>
@@ -29,7 +33,6 @@
 #include "utility.h"
 #include "dialogmsg.h"
 #include "siritask.h"
-#include "version.h"
 #include "json.h"
 #include "checkforupdateswindow.h"
 #include "engines.h"
@@ -37,10 +40,14 @@
 #include <utility>
 #include <vector>
 
-class checkUpdates : public QObject
+class checkUpdates
 {
-	Q_OBJECT
 public:
+	static bool hasNetworkSupport()
+	{
+		return true ;
+	}
+
 	void run( bool e ) ;
 
 	checkUpdates( QWidget * widget,checkforupdateswindow::functions ) ;
@@ -71,5 +78,31 @@ private:
 	std::vector< engines::engine::Wrapper > m_backends ;
 	checkforupdateswindow::functions m_functions ;
 } ;
+
+#else
+
+#include "checkforupdateswindow.h"
+
+class checkUpdates
+{	
+public:
+	static bool hasNetworkSupport()
+	{
+		return false ;
+	}
+
+	void run( bool e )
+	{
+		Q_UNUSED( e )
+	}
+
+	checkUpdates( QWidget * widget,checkforupdateswindow::functions function )
+	{
+		Q_UNUSED( widget )
+		Q_UNUSED( function )
+	}
+} ;
+
+#endif
 
 #endif // CHECKFORUPDATES_H

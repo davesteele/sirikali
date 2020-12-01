@@ -52,16 +52,16 @@ static engines::engine::BaseOptions _setOptions()
 						  "gocryptfs -info %{plainFolder}" } ;
 	s.reverseString         = "-reverse" ;
 	s.idleString            = "-idle %{timeout}" ;
-	s.executableName        = "gocryptfs" ;
 	s.incorrectPasswordText = "Password incorrect." ;
 	s.configFileArgument    = "--config %{configFilePath}" ;
+	s.executableNames       = QStringList{ "gocryptfs" } ;
 	s.configFileNames       = QStringList{ "gocryptfs.conf",
 					       ".gocryptfs.conf",
 					       ".gocryptfs.reverse.conf",
 					       "gocryptfs.reverse.conf" } ;
 	s.fuseNames             = QStringList{ "fuse.gocryptfs","fuse.gocryptfs-reverse" } ;
 	s.names                 = QStringList{ "gocryptfs","gocryptfs.reverse","gocryptfs-reverse" } ;
-	s.notFoundCode          = engines::engine::status::gocryptfsNotFound ;
+	s.notFoundCode          = engines::engine::status::engineExecutableNotFound ;
 	s.versionInfo           = { { "--version",true,1,0 } } ;
 
 	s.createControlStructure = "-q --init %{createOptions} %{cipherFolder}" ;
@@ -119,13 +119,6 @@ void gocryptfs::updateOptions( engines::engine::cmdArgsList& opt,bool creating )
 	}
 }
 
-engines::engine::args gocryptfs::command( const QByteArray& password,
-					  const engines::engine::cmdArgsList& args,
-					  bool create ) const
-{
-	return custom::set_command( *this,password,args,create ) ;
-}
-
 engines::engine::status gocryptfs::errorCode( const QString& e,int s ) const
 {
 	if( m_version_has_error_codes ){
@@ -136,12 +129,12 @@ engines::engine::status gocryptfs::errorCode( const QString& e,int s ) const
 
 		if( s == 12 ){
 
-			return engines::engine::status::gocryptfsBadPassword ;
+			return engines::engine::status::badPassword ;
 		}
 	}else{
 		if( e.contains( this->incorrectPasswordText() ) ){
 
-			return engines::engine::status::gocryptfsBadPassword ;
+			return engines::engine::status::badPassword ;
 		}
 	}
 

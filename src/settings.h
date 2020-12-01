@@ -187,6 +187,7 @@ public:
 	bool showFavoritesInContextMenu( void ) ;
 	int networkTimeOut() ;
 	bool showMountDialogWhenAutoMounting() ;
+	bool showUnlockedVolumesFromAllUsers() ;
 	int checkForUpdateInterval() ;
 	int windowsPbkdf2Interations() ;
 	bool ecryptfsAllowNotEncryptingFileNames() ;
@@ -216,6 +217,7 @@ public:
 	QStringList supportedFileSystemsOnMountPaths( void ) ;
 	QString gvfsFuseMonitorPath( void ) ;
 	int mountMonitorFolderPollingInterval( void ) ;
+	int delayBeforeAutoMountAtStartup() ;
 private:
 	QSettings m_settings ;
 };

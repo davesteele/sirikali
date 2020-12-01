@@ -28,16 +28,15 @@
  * SUCH DAMAGE.
  */
 
-#ifndef LXQT_KWALLET_H
-#define LXQT_KWALLET_H
+#ifndef LXQT_KWALLET_DBUS_H
+#define LXQT_KWALLET_DBUS_H
 
 #include "lxqt_wallet.h"
 
 #include <QString>
 #include <QByteArray>
 #include <QDebug>
-
-#include <kwallet.h>
+#include <QtDBus>
 
 class QWidget;
 
@@ -47,12 +46,14 @@ namespace LXQt
 namespace Wallet
 {
 
-class kwallet : public LXQt::Wallet::Wallet
+class kwallet_dbus : public LXQt::Wallet::Wallet
 {
     Q_OBJECT
 public:
-    kwallet();
-    ~kwallet();
+    static bool has_functionality();
+
+    kwallet_dbus();
+    ~kwallet_dbus();
 
     void open(const QString &walletName,
               const QString &applicationName,
@@ -85,7 +86,7 @@ public:
     void closeWallet(bool);
     void changeWalletPassWord(const QString &walletName,
                               const QString &applicationName = QString(),
-                              std::function<void(bool)> = [](bool e) { Q_UNUSED(e); });
+			      std::function<void(bool)> = [](bool e) { Q_UNUSED(e) });
     void setImage(const QIcon &);
 
     int walletSize(void) ;
@@ -100,17 +101,18 @@ private slots:
 private:
     void openedWallet(bool);
 
-    KWallet::Wallet *m_kwallet;
+    int m_handle = -1;
     QString m_walletName;
     QString m_applicationName;
     QString m_password;
-
-    std::function< void(bool) > m_walletOpened = [](bool e) { Q_UNUSED(e); };
-    std::function<void(QString)> m_log = [](QString e){ Q_UNUSED(e) };
+    QString m_folder;
+    QDBusInterface m_dbus;
+    std::function<void(bool)> m_walletOpened = [](bool e) { Q_UNUSED(e) };
+    std::function<void(QString)> m_log;
 };
 
 }
 
 }
 
-#endif // LXQT_KWALLET_H
+#endif // LXQT_KWALLET_DBUS_H

@@ -4,7 +4,7 @@ set_property( GLOBAL PROPERTY ALLOW_DUPLICATE_CUSTOM_TARGETS ON )
 
 project( sirikali )
 
-set( PGR_VERSION "1.4.7" )
+set( PGR_VERSION "1.4.8" )
 set( COPYRIGHT_YEARS "2016-2020" )
 
 add_definitions( -Wextra -Wall -pedantic )
@@ -79,6 +79,10 @@ if( DEFINED QT5 AND NOT QT5 )
 	message( FATAL_ERROR "Qt4 Build is no longer supported" )
 endif()
 
+if(NOT DEFINED NONETWORKSUPPORT)
+   set( NONETWORKSUPPORT "true" )
+endif()
+
 set( QT5 "true" )
 
 find_file( JSON_HEADER_PATH "nlohmann/json.hpp" )
@@ -120,19 +124,14 @@ endif()
 
 if( UNIX AND NOT APPLE )
 
-	find_package( Qt5Widgets REQUIRED )
-	find_package( Qt5Core REQUIRED )
-	find_package( Qt5Network REQUIRED )
-	find_package( Qt5DBus REQUIRED )
+        find_package( Qt5 COMPONENTS Core Widgets Network DBus REQUIRED )
 
 	message( STATUS "Found Qt5Widgets, version  ${Qt5Widgets_VERSION}" )
 	message( STATUS "Found Qt5Core, version  ${Qt5Core_VERSION}" )
 	message( STATUS "Found Qt5Network, version  ${Qt5Network_VERSION}" )
 	message( STATUS "Found Qt5DBus, version  ${Qt5DBus_VERSION}" )
 else()
-	find_package( Qt5Widgets REQUIRED )
-	find_package( Qt5Core REQUIRED )
-	find_package( Qt5Network REQUIRED )
+        find_package( Qt5 COMPONENTS Core Widgets Network REQUIRED )
 
 	message( STATUS "Found Qt5Widgets, version  ${Qt5Widgets_VERSION}" )
 	message( STATUS "Found Qt5Core, version  ${Qt5Core_VERSION}" )
@@ -153,55 +152,14 @@ file( WRITE ${PROJECT_BINARY_DIR}/version.h "
 #endif
 \n" )
 
-if( INTERNAL_LXQT_WALLET )
-
-                message( STATUS "---------------------------------------------------------------------------" )
-	message( STATUS "lxqt wallet support will be provided by an internal library" )
-                message( STATUS "---------------------------------------------------------------------------" )
-
-	ADD_SUBDIRECTORY( src/3rdParty/lxqt_wallet )
-	include_directories( ${PROJECT_SOURCE_DIR}/src/3rdParty/lxqt_wallet/frontend )
-	include_directories( ${PROJECT_BINARY_DIR}/src/3rdParty/lxqt_wallet/frontend )
-else()
-	pkg_check_modules( LXQT_WALLET lxqt-wallet )
-
-	if( NOT LXQT_WALLET_FOUND )
-
-		message( STATUS "ERROR: could not find lxqt_wallet package" )
-		message( STATUS "---------------------------------------------------------------------------" )
-		message( STATUS "lxqt wallet support will be provided by an internal library" )
-		message( STATUS "---------------------------------------------------------------------------" )
-
-		ADD_SUBDIRECTORY( src/3rdParty/lxqt_wallet )
-		include_directories( ${PROJECT_SOURCE_DIR}/src/3rdParty/lxqt_wallet/frontend )
-		include_directories( ${PROJECT_BINARY_DIR}/src/3rdParty/lxqt_wallet/frontend )
-	else()
-		if( LXQT_WALLET_VERSION VERSION_GREATER "3.1.0"  )
-
-			include_directories( ${LXQT_WALLET_INCLUDEDIR} )
-			link_directories( ${LXQT_WALLET_LIBDIR} )
-
-			message( STATUS "---------------------------------------------------------------------------" )
-			message( STATUS "lxqt wallet support will be provided by an external library" )
-			message( STATUS "---------------------------------------------------------------------------" )
-		else()
-			message( STATUS "---------------------------------------------------------------------------" )
-
-			message( FATAL_ERROR "---------------------------------------------------------------------------\nInstalled version of lxqt_wallet is too old(<3.2.0)\nPlease install a more receant version from: https://github.com/lxqt/lxqt_wallet\n---------------------------------------------------------------------------" )
-
-		endif()
-	endif()
-endif()
-
-if( MCHUNGU_NETWORK_FOUND )
-
+if(NONETWORKSUPPORT)
+        file(WRITE  ${PROJECT_BINARY_DIR}/network_support.h "\n#define HAS_NETWORK_SUPPORT 0\n")
 	message( STATUS "---------------------------------------------------------------------------" )
-	message( STATUS "mhogomchungu_network library will be provided by an external library" )
+	message( STATUS "network support is disabled" )
 	message( STATUS "---------------------------------------------------------------------------" )
-
-	include_directories( "${MCHUNGU_NETWORK_INCLUDEDIR}" )
-	link_directories( "${MCHUNGU_NETWORK_LIBDIR}" )
 else()
+        file(WRITE  ${PROJECT_BINARY_DIR}/network_support.h "\n#define HAS_NETWORK_SUPPORT 1\n")
+
 	message( STATUS "---------------------------------------------------------------------------" )
 	message( STATUS "mhogomchungu_network library will be provided by an internal library" )
 	message( STATUS "---------------------------------------------------------------------------" )
@@ -211,18 +169,59 @@ endif()
 
 if( MCHUNGU_TASK_FOUND )
 
-	message( STATUS "---------------------------------------------------------------------------" )
+        message( STATUS "---------------------------------------------------------------------------" )
 	message( STATUS "mhogomchungu_task library will be provided by an external library" )
 	message( STATUS "---------------------------------------------------------------------------" )
 
 	include_directories( "${MCHUNGU_TASK_INCLUDEDIR}" )
 	link_directories( "${MCHUNGU_TASK_LIBDIR}" )
 else()
-	message( STATUS "---------------------------------------------------------------------------" )
+        message( STATUS "---------------------------------------------------------------------------" )
 	message( STATUS "mhogomchungu_task library will be provided by an internal library" )
 	message( STATUS "---------------------------------------------------------------------------" )
 	include_directories( src/3rdParty/tasks )
 	ADD_SUBDIRECTORY( src/3rdParty/tasks )
+endif()
+
+if( INTERNAL_LXQT_WALLET )
+
+        message( STATUS "---------------------------------------------------------------------------" )
+	message( STATUS "lxqt wallet support will be provided by an internal library" )
+	message( STATUS "---------------------------------------------------------------------------" )
+
+	ADD_SUBDIRECTORY( src/3rdParty/lxqt_wallet )
+	include_directories( ${PROJECT_SOURCE_DIR}/src/3rdParty/lxqt_wallet/frontend )
+	include_directories( ${PROJECT_BINARY_DIR}/src/3rdParty/lxqt_wallet/frontend )
+else()
+        pkg_check_modules( LXQT_WALLET lxqt-wallet )
+
+	if( NOT LXQT_WALLET_FOUND )
+
+	        message( STATUS "ERROR: could not find lxqt_wallet package" )
+		message( STATUS "---------------------------------------------------------------------------" )
+		message( STATUS "lxqt wallet support will be provided by an internal library" )
+		message( STATUS "---------------------------------------------------------------------------" )
+
+		include_directories( ${PROJECT_SOURCE_DIR}/src/3rdParty/lxqt_wallet/frontend )
+		include_directories( ${PROJECT_BINARY_DIR}/src/3rdParty/lxqt_wallet/frontend )
+
+		ADD_SUBDIRECTORY( src/3rdParty/lxqt_wallet )
+	else()
+	        if( LXQT_WALLET_VERSION VERSION_GREATER "3.1.0"  )
+
+		        include_directories( ${LXQT_WALLET_INCLUDEDIR} )
+			link_directories( ${LXQT_WALLET_LIBDIR} )
+
+			message( STATUS "---------------------------------------------------------------------------" )
+			message( STATUS "lxqt wallet support will be provided by an external library" )
+			message( STATUS "---------------------------------------------------------------------------" )
+		else()
+		        message( STATUS "---------------------------------------------------------------------------" )
+
+			message( FATAL_ERROR "---------------------------------------------------------------------------\nInstalled version of lxqt_wallet is too old(<3.2.0)\nPlease install a more receant version from: https://github.com/lxqt/lxqt_wallet\n---------------------------------------------------------------------------" )
+
+		endif()
+	endif()
 endif()
 
 add_definitions( -std=c++14 )
@@ -254,13 +253,12 @@ set( UI_FILES 	src/sirikali.ui
 set( MOC_FILES
 		src/configoptions.h
 		src/configfileoption.h
-		src/checkforupdates.h
 		src/dialogok.h
 		src/help.h
 		src/createbackendwindow.h
 		src/sirikali.h
-		src/keydialog.h
 		src/oneinstance.h
+		src/keydialog.h
 		src/dialogmsg.h
 		src/plugin.h
 		src/favorites2.h
@@ -309,6 +307,7 @@ set( SRC 	src/dialogok.cpp
 		src/filemanager.cpp
 		src/utility2.cpp
 		src/win.cpp
+		src/processManager.cpp
 		src/settings.cpp
 		src/engines/options.cpp
 		src/engines/cryfs.cpp
@@ -327,6 +326,7 @@ set( SRC 	src/dialogok.cpp
 		src/engines/cryfscreateoptions.cpp
 		src/engines/fscrypt.cpp
 		src/engines/fscryptcreateoptions.cpp
+		src/engines/cryptomator.cpp
 )
 
 if( APPLE )
@@ -372,20 +372,19 @@ endif()
 link_directories( ${GCRYPT_LIBRARY_PATH} )
 
 if( WIN32 )
-
-    TARGET_LINK_LIBRARIES( sirikali ${Qt5Widgets_LIBRARIES} ${Qt5Core_LIBRARIES} ${Qt5Widgets_LIBRARIES} ${Qt5Network_LIBRARIES} lxqt-wallet mhogomchungu_task mhogomchungu_network)
+    TARGET_LINK_LIBRARIES( sirikali ${Qt5Widgets_LIBRARIES} ${Qt5Core_LIBRARIES} ${Qt5Widgets_LIBRARIES} ${Qt5Network_LIBRARIES} mhogomchungu_task lxqt-wallet )
 endif()
 
 if( APPLE )
-
-    TARGET_LINK_LIBRARIES( sirikali ${Qt5Widgets_LIBRARIES} ${Qt5Core_LIBRARIES} ${Qt5Widgets_LIBRARIES} ${Qt5Network_LIBRARIES} ${library_pwquality} ${GCRYPT_LIBRARY} lxqt-wallet mhogomchungu_task mhogomchungu_network -L${GCRYPT_LIBRARY_PATH})
+    TARGET_LINK_LIBRARIES( sirikali ${Qt5Widgets_LIBRARIES} ${Qt5Core_LIBRARIES} ${Qt5Widgets_LIBRARIES} ${Qt5Network_LIBRARIES} ${library_pwquality} ${GCRYPT_LIBRARY} mhogomchungu_task lxqt-wallet -L${GCRYPT_LIBRARY_PATH})
 endif()
 
 if( UNIX AND NOT APPLE )
+    TARGET_LINK_LIBRARIES( sirikali ${Qt5DBus_LIBRARIES} ${Qt5Widgets_LIBRARIES} ${Qt5Core_LIBRARIES} ${Qt5Widgets_LIBRARIES} ${Qt5Network_LIBRARIES} ${library_pwquality} ${GCRYPT_LIBRARY} mhogomchungu_task lxqt-wallet -L${GCRYPT_LIBRARY_PATH} -Wl,-znow)
+endif()
 
-    TARGET_LINK_LIBRARIES( sirikali ${Qt5DBus_LIBRARIES} ${Qt5Widgets_LIBRARIES} ${Qt5Core_LIBRARIES} ${Qt5Widgets_LIBRARIES} ${Qt5Network_LIBRARIES} ${library_pwquality} ${GCRYPT_LIBRARY} lxqt-wallet mhogomchungu_task mhogomchungu_network -L${GCRYPT_LIBRARY_PATH} -Wl,-znow)
-else()
-
+if(NOT NONETWORKSUPPORT)
+    TARGET_LINK_LIBRARIES(sirikali mhogomchungu_network)
 endif()
 
 message( STATUS "---------------------------------------------------------------------------" )

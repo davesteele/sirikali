@@ -56,7 +56,6 @@ static engines::engine::BaseOptions _setOptions()
 	s.acceptsVolName        = true ;
 	s.passwordFormat        = "%{password}" ;
 	s.idleString            = "--unmount-idle %{timeout}" ;
-	s.executableName        = "cryfs" ;
 	s.incorrectPasswordText = "Could not load config file. Did you enter the correct password?" ;
 	s.configFileArgument    = "--config %{configFilePath}" ;
 	s.releaseURL            = "https://api.github.com/repos/cryfs/cryfs/releases" ;
@@ -65,7 +64,9 @@ static engines::engine::BaseOptions _setOptions()
 	s.fuseNames             = QStringList{ "fuse.cryfs" } ;
 	s.failedToMountList     = QStringList{ "Error" } ;
 	s.names                 = QStringList{ "cryfs" } ;
-	s.notFoundCode          = engines::engine::status::cryfsNotFound ;
+	s.executableNames       = QStringList{ "cryfs" } ;
+
+	s.notFoundCode          = engines::engine::status::engineExecutableNotFound ;
 	s.versionInfo           = { { "--version",true,2,0 } } ;
 
 	if( utility::platformIsWindows() ){
@@ -108,13 +109,6 @@ const QProcessEnvironment& cryfs::getProcessEnvironment() const
 	return m_env ;
 }
 
-engines::engine::args cryfs::command( const QByteArray& password,
-				      const engines::engine::cmdArgsList& args,
-				      bool create ) const
-{
-	return custom::set_command( *this,password,args,create ) ;
-}
-
 engines::engine::status cryfs::errorCode( const QString& e,int s ) const
 {
 	if( m_version_greater_or_equal_0_9_9 ){
@@ -127,7 +121,7 @@ engines::engine::status cryfs::errorCode( const QString& e,int s ) const
 
 		if( s == 11 ){
 
-			return engines::engine::status::cryfsBadPassword ;
+			return engines::engine::status::badPassword ;
 
 		}else if( s == 14 ){
 
@@ -143,7 +137,7 @@ engines::engine::status cryfs::errorCode( const QString& e,int s ) const
 		 */
 		if( utility::containsAtleastOne( e,"Error 11:",this->incorrectPasswordText() ) ){
 
-			return engines::engine::status::cryfsBadPassword ;
+			return engines::engine::status::badPassword ;
 
 		}else if( e.contains( "This filesystem is for CryFS" ) &&
 			  e.contains( "It has to be migrated" ) ){

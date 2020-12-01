@@ -51,7 +51,6 @@ static engines::engine::BaseOptions _setOptions()
 	s.setsCipherPath        = true ;
 	s.acceptsSubType        = true ;
 	s.acceptsVolName        = true ;
-	s.executableName        = "sshfs" ;
 	s.releaseURL            = "https://api.github.com/repos/libfuse/sshfs/releases" ;
 	s.windowsInstallPathRegistryKey = "SOFTWARE\\SSHFS-Win" ;
 	s.windowsInstallPathRegistryValue = "InstallDir" ;
@@ -60,7 +59,9 @@ static engines::engine::BaseOptions _setOptions()
 	s.successfulMountedList = QStringList{ "has been started" } ;
 	s.fuseNames             = QStringList{ "fuse.sshfs" } ;
 	s.names                 = QStringList{ "sshfs" } ;
-	s.notFoundCode          = engines::engine::status::sshfsNotFound ;
+	s.executableNames       = QStringList{ "sshfs" } ;
+
+	s.notFoundCode          = engines::engine::status::engineExecutableNotFound ;
 	s.versionInfo           = { { "--version",true,2,0 } } ;
 
 	s.mountControlStructure = "%{mountOptions} %{cipherFolder} %{mountPoint} %{fuseOpts}" ;
@@ -71,11 +72,11 @@ static engines::engine::BaseOptions _setOptions()
 		s.autoDeletesMountPoint = true ;
 
 		s.versionMinimum = "3.5.2" ;
-		s.sshOptions = "create_file_umask=0000,create_dir_umask=0000,umask=0000,idmap=user,StrictHostKeyChecking=no" ;
+		s.defaultFavoritesMountOptions = "create_file_umask=0000,create_dir_umask=0000,umask=0000,idmap=user,StrictHostKeyChecking=no" ;
 	}else{
 		s.autoCreatesMountPoint = false ;
 		s.autoDeletesMountPoint = false ;
-		s.sshOptions = "idmap=user,StrictHostKeyChecking=no" ;
+		s.defaultFavoritesMountOptions = "idmap=user,StrictHostKeyChecking=no" ;
 	}
 
 	return s ;
@@ -190,13 +191,6 @@ void sshfs::updateOptions( engines::engine::commandOptions& opts,
 		fuseOptions.add( "PreferredAuthentications=password" ) ;
 		fuseOptions.add( "password_stdin" ) ;
 	}
-}
-
-engines::engine::args sshfs::command( const QByteArray& password,
-				      const engines::engine::cmdArgsList& args,
-				      bool create ) const
-{
-	return custom::set_command( *this,password,args,create ) ;
 }
 
 engines::engine::error sshfs::errorCode( const QString& e ) const

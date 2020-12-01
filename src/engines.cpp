@@ -28,6 +28,7 @@
 #include "engines/securefs.h"
 #include "engines/fscrypt.h"
 #include "engines/custom.h"
+#include "engines/cryptomator.h"
 
 #include "utility.h"
 #include "settings.h"
@@ -35,6 +36,22 @@
 #include "engines/options.h"
 
 #include <QCoreApplication>
+
+static QString _emptyQString ;
+
+static QStringList _system_search_paths()
+{
+	return { "/usr/local/bin/",
+		 "/usr/local/sbin/",
+		 "/usr/bin/",
+		 "/usr/sbin/",
+		 "/bin/",
+		 "/sbin/",
+		 "/opt/local/bin/",
+		 "/opt/local/sbin/",
+		 "/opt/bin/",
+		 "/opt/sbin/" } ;
+}
 
 static QStringList _search_path_0( const QString& e )
 {
@@ -76,19 +93,9 @@ static QStringList _search_path( const QStringList& m )
 		const auto c = a + "/.bin/" ;
 		const auto d = QCoreApplication::applicationDirPath().toUtf8() ;
 
-		return { "/usr/local/bin/",
-			"/usr/local/sbin/",
-			"/usr/bin/",
-			"/usr/sbin/",
-			"/bin/",
-			"/sbin/",
-			"/opt/local/bin/",
-			"/opt/local/sbin/",
-			"/opt/bin/",
-			"/opt/sbin/",
-			 b.constData(),
-			 c.constData(),
-			 d.constData() } ;
+		auto m = QStringList{ b.constData(),c.constData(),d.constData() } ;
+
+		return _system_search_paths() + m ;
 	}
 }
 
@@ -154,6 +161,11 @@ QStringList engines::executableSearchPaths( const engines::engine& engine )
 			       engine.windowsExecutableFolderPath() } ) ;
 }
 
+QString engines::executableNotEngineFullPath( const QString& e )
+{
+	return _executableFullPath( e,[](){ return _system_search_paths() ; } ) ;
+}
+
 QString engines::executableFullPath( const QString& f )
 {
 	return _executableFullPath( f,[](){ return engines::executableSearchPaths() ; } ) ;
@@ -170,14 +182,263 @@ void engines::version::logError() const
 	utility::debug() << a.arg( m_engineName,this->toString() ) ;
 }
 
+struct resolveStruct{
+	const engines::engine& engine ;
+	const QString& controlStructure ;
+	const engines::engine::cmdArgsList& args ;
+	const QByteArray& password ;
+	const QStringList& opts ;
+	const QStringList& fuseOpts ;
+} ;
+
+class resolve{
+public:
+	struct args{
+		const char * first ;
+		const QString& second ;
+	} ;
+	template< typename ... T >
+	resolve( T&& ... e )
+	{
+		this->set( std::forward< T >( e ) ... ) ;
+	}
+	QString option( QString a ) const
+	{
+		for( const auto& it : m_opts ){
+
+			if( !it.second.isEmpty() ){
+
+				a.replace( it.first,it.second ) ;
+			}
+		}
+
+		for( const auto& it : m_opts ){
+
+			if( a.contains( it.first ) ) {
+
+				return {} ;
+			}
+		}
+
+		return a ;
+	}
+private:
+	template< typename T >
+	void set( T&& t )
+	{
+		m_opts.emplace_back( std::forward< T >( t ) ) ;
+	}
+	template< typename E,typename ... T >
+	void set( E&& e,T&& ... t )
+	{
+		this->set( std::forward< E >( e ) ) ;
+		this->set( std::forward< T >( t ) ... ) ;
+	}
+	std::vector< resolve::args > m_opts ;
+};
+
+class replace{
+public:
+	replace( QStringList& s,int position ) :
+		m_stringList( s ),m_position( position )
+	{
+	}
+	void set( const QString& e )
+	{
+		m_stringList.insert( m_position,e ) ;
+	}
+	void set( const QStringList& e )
+	{
+		for( int i = e.size() - 1 ; i >= 0 ; i-- ){
+
+			m_stringList.insert( m_position,e.at( i ) ) ;
+		}
+	}
+private:
+	QStringList& m_stringList ;
+	int m_position ;
+};
+
+template< typename ... T >
+static void _resolve( QStringList& orgs,
+		      const QString& name,
+		      const QString& controlStructure,
+		      T&& ... rrr )
+{
+	if( controlStructure.isEmpty() ){
+
+		return ;
+	}
+
+	resolve rr( std::forward< T >( rrr ) ... ) ;
+
+	auto m = utility::split( controlStructure,' ' ) ;
+
+	if( m.size() == 1 ){
+
+		auto a = rr.option( m.at( 0 ) ) ;
+
+		if( !a.isEmpty() ){
+
+			orgs.append( a ) ;
+		}
+
+	}else if( m.size() == 2 ){
+
+		auto a = rr.option( m.at( 1 ) ) ;
+
+		if( !a.isEmpty() ){
+
+			orgs.append( m.at( 0 ) ) ;
+			orgs.append( a ) ;
+		}
+	}else{
+		auto s = QString( "Wrong control structure detected in custom backend named \"%1\"." ) ;
+		utility::debug::logErrorWhileStarting( s.arg( name ) ) ;
+	}
+}
+
+static QStringList _replace_opts( const resolveStruct& r )
+{
+	auto opts = r.opts ;
+
+	_resolve( opts,
+		  r.engine.name(),
+		  r.engine.configFileArgument(),
+		  resolve::args{ "%{cipherFolder}",r.args.cipherFolder },
+		  resolve::args{ "%{configFileName}",r.engine.configFileName() },
+		  resolve::args{ "%{configFilePath}",r.args.configFilePath } ) ;
+
+	_resolve( opts,
+		  r.engine.name(),
+		  r.engine.keyFileArgument(),
+		  resolve::args{ "%{keyfile}",r.args.keyFile } ) ;
+
+	_resolve( opts,
+		  r.engine.name(),
+		  r.engine.idleString(),
+		  resolve::args{ "%{timeout}",r.args.idleTimeout } ) ;
+
+	return opts ;
+}
+
+template< typename Function >
+static void _replace_opts( QStringList& mm,
+			    const char * controlStructure,
+			    Function function )
+{
+	for( int i = 0 ; i < mm.size() ; i++ ){
+
+		auto& it = mm[ i ] ;
+
+		if( it == controlStructure ){
+
+			mm.removeAt( i ) ;
+
+			function( { mm,i } ) ;
+
+			break ;
+		}
+	}
+}
+
+static QStringList _resolve( const resolveStruct& r )
+{
+	auto mm = utility::split( r.controlStructure,' ' ) ;
+
+	_replace_opts( mm,"%{cipherFolder}",[ & ]( replace s ){
+
+		s.set( r.args.cipherFolder )  ;
+	} ) ;
+
+	_replace_opts( mm,"%{mountPoint}",[ & ]( replace s ){
+
+		s.set( r.args.mountPoint ) ;
+	} ) ;
+
+	_replace_opts( mm,"%{password}",[ & ]( replace s ){
+
+		s.set( r.password ) ;
+	} ) ;
+
+	_replace_opts( mm,"%{fuseOpts}",[ & ]( replace s ){
+
+		if( !r.fuseOpts.isEmpty() ){
+
+			if( r.args.fuseOptionsSeparator.isEmpty() ){
+
+				s.set( { "-o",r.fuseOpts.join( ',' ) } ) ;
+			}else{
+				s.set( { r.args.fuseOptionsSeparator,"-o",r.fuseOpts.join( ',' ) } ) ;
+			}
+		}
+	} ) ;
+
+	_replace_opts( mm,"%{createOptions}",[ & ]( replace s ){
+
+		s.set( _replace_opts( r ) ) ;
+	} ) ;
+
+	_replace_opts( mm,"%{mountOptions}",[ & ]( replace s ){
+
+		auto opts = _replace_opts( r ) ;
+
+		if( r.args.boolOptions.unlockInReverseMode ){
+
+			opts.append( r.engine.reverseString() ) ;
+		}
+
+		s.set( opts ) ;
+	} ) ;
+
+	mm.removeAll( QString() ) ;
+
+	return mm ;
+}
+
 engines::engine::args engines::engine::command( const QByteArray& password,
 						const engines::engine::cmdArgsList& args,
 						bool create ) const
 {
-	Q_UNUSED( password )
-	Q_UNUSED( args )
-	Q_UNUSED( create )
-	return {} ;
+	const auto& engine = *this ;
+
+	engines::engine::commandOptions m( create,engine,args ) ;
+
+	auto s = [ & ](){
+
+		if( create ){
+
+			auto opts = args.createOptions + m.exeOptions().get() ;
+
+			return _resolve( { engine,
+					   engine.createControlStructure(),
+					   args,
+					   password,
+					   opts,
+					   m.fuseOpts().get() } ) ;
+		}else{
+			return _resolve( { engine,
+					   engine.mountControlStructure(),
+					   args,
+					   password,
+					   m.exeOptions().get(),
+					   m.fuseOpts().get() } ) ;
+		}
+	}() ;
+
+	engine.updateOptions( s,args,create ) ;
+
+	const auto& exe = engine.executableFullPath() ;
+
+	if( engine.needsJava() ){
+
+		s.insert( 0,exe ) ;
+		s.insert( 0,"-jar" ) ;
+
+		return { args,m,engine.javaFullPath(),s } ;
+	}else{
+		return { args,m,exe,s } ;
+	}
 }
 
 engines::engine::status engines::engine::errorCode( const QString& e,int s ) const
@@ -265,7 +526,7 @@ engines::engine::status engines::engine::unmount( const engines::engine::unMount
 
 				return { "umount",{ e.mountPoint } } ;
 			}else{
-				return { "fusermount",{ "-u",e.mountPoint } } ;
+				return { this->fuserMountPath(),{ "-u",e.mountPoint } } ;
 			}
 		}else{
 			auto s = this->unMountCommand() ;
@@ -321,13 +582,22 @@ static QString _sanitizeVersionString( const QString& s )
 	return m ;
 }
 
-static engines::engineVersion _installedVersion( const engines::engine& e,
+static engines::engineVersion _installedVersion( engines::exeFullPath& javaExe,
+						 const engines::engine& e,
 						 const QProcessEnvironment env,
 						 const engines::engine::BaseOptions::vInfo& v )
 {
 	const auto& cmd = e.executableFullPath() ;
 
-	const auto r = utility::unwrap( ::Task::process::run( cmd,{ v.versionArgument },-1,{},env ) ) ;
+	const auto r = [ & ](){
+
+		if( e.needsJava() ){
+
+			return utility::unwrap( ::Task::process::run( javaExe.get(),{ "-jar",cmd,v.versionArgument },-1,{},env ) ) ;
+		}else{
+			return utility::unwrap( ::Task::process::run( cmd,{ v.versionArgument },-1,{},env ) ) ;
+		}
+	}() ;
 
 	const auto m = utility::split( v.readFromStdOut ? r.std_out() : r.std_error(),'\n' ) ;
 
@@ -345,13 +615,14 @@ static engines::engineVersion _installedVersion( const engines::engine& e,
 }
 
 template< typename T >
-static engines::engineVersion _installedVersion( const engines::engine& e,
+static engines::engineVersion _installedVersion( engines::exeFullPath& javaExe,
+						 const engines::engine& e,
 						 const QProcessEnvironment env,
 						 const T& v )
 {
 	for( const auto& it : v ){
 
-		auto m = _installedVersion( e,env,it ) ;
+		auto m = _installedVersion( javaExe,e,env,it ) ;
 
 		if( m.valid() ){
 
@@ -385,6 +656,99 @@ engines::engine::~engine()
 {
 }
 
+static engines::engine::terminate_result _failed_to_finish( QString exe,QStringList args )
+{
+	auto a = Task::process::result( "BackendFailedToFinish",
+					QByteArray(),
+					-1,
+					0,
+					true ) ;
+
+	return { std::move( a ),std::move( exe ),std::move( args ) } ;
+}
+
+engines::engine::terminate_result
+engines::engine::terminateProcess( const engines::engine::terminate_process& e ) const
+{
+	auto args = [ & ](){
+
+		if( utility::platformIsWindows() ){
+
+			return this->windowsUnMountCommand() ;
+		}else{
+			return this->unMountCommand() ;
+		}
+	}() ;
+
+	if( args.isEmpty() ){
+
+		auto a = "SiriKali Error: Unmount Command Not Set" ;
+		auto b = Task::process::result( a,QByteArray(),-1,0,true ) ;
+
+		return { std::move( b ),{},{} } ;
+	}
+
+	QString exe = args.takeAt( 0 ) ;
+
+	if( exe == "SIGTERM" ){
+
+		utility::debug() << "Terminating a process by sending it SIGTERM" ;
+
+		e.exe.terminate() ;
+
+		if( utility::waitForFinished( e.exe ) ){
+
+			auto a = Task::process::result( QByteArray(),
+							QByteArray(),
+							0,
+							0,
+							true ) ;
+
+			return { std::move( a ),std::move( exe ),std::move( args ) } ;
+		}else{
+			return _failed_to_finish( std::move( exe ),std::move( args ) ) ;
+		}
+	}
+
+	for( auto& it : args ){
+
+		if( it == "%{PID}" ){
+
+			it = QString::number( e.exe.processId() ) ;
+
+		}else if( it == "%{mountPoint}" ){
+
+			it = e.mountPath ;
+		}
+	}
+
+	utility::logger logger ;
+
+	logger.showText( exe,args ) ;
+
+	auto m = utility::unwrap( Task::process::run( exe,args,-1,"",this->getProcessEnvironment() ) ) ;
+
+	logger.showText( m ) ;
+
+	if( m.success() ){
+
+		if( utility::waitForFinished( e.exe ) ){
+
+			return { std::move( m ),std::move( exe ),std::move( args ) } ;
+		}else{
+			return _failed_to_finish( std::move( exe ),std::move( args ) ) ;
+		}
+	}else{
+		return { std::move( m ),std::move( exe ),std::move( args ) } ;
+	}
+}
+
+engines::engine::terminate_result engines::engine::terminateProcess( const QString& mountPath ) const
+{
+	Q_UNUSED( mountPath )
+	return engines::engine::terminate_result() ;
+}
+
 static engines::engine::BaseOptions _update( engines::engine::BaseOptions m )
 {
 	for( auto& it : m.names ){
@@ -403,17 +767,60 @@ static engines::engine::BaseOptions _update( engines::engine::BaseOptions m )
 	return m ;
 }
 
+engines::exeFullPath engines::engine::m_exeJavaFullPath( [](){
+
+	return engines::executableNotEngineFullPath( "java" ) ;
+} ) ;
+
+engines::exeFullPath engines::engine::m_exeFuserMount( [](){
+
+	return engines::executableNotEngineFullPath( "fusermount" ) ;
+} ) ;
+
+static std::function< QString() > _exe_full_path( const QStringList& exe,const engines::engine& engine )
+{
+	return [ & ](){
+
+		for( const auto& it : exe ){
+
+			auto s = engines::executableFullPath( it,engine ) ;
+
+			if( !s.isEmpty() ){
+
+				return s ;
+			}
+		}
+
+		return QString() ;
+	} ;
+}
+
 engines::engine::engine( engines::engine::BaseOptions o ) :
 	m_Options( _update( std::move( o ) ) ),
 	m_processEnvironment( _set_env( *this ) ),
-	m_exeFullPath( [ this ](){ return engines::executableFullPath( this->executableName(),*this ) ; } ),
-	m_version( this->name(),[ this ](){ return _installedVersion( *this,m_processEnvironment,m_Options.versionInfo ) ; } )
+	m_exeFullPath( _exe_full_path( m_Options.executableNames,*this ) ),
+	m_version( this->name(),[ this ](){ return _installedVersion( m_exeJavaFullPath,*this,m_processEnvironment,m_Options.versionInfo ) ; } )
 {
 }
 
 const QString& engines::engine::executableFullPath() const
 {
 	return m_exeFullPath.get() ;
+}
+
+const QString& engines::engine::javaFullPath() const
+{
+	return m_exeJavaFullPath.get() ;
+}
+
+const QString & engines::engine::fuserMountPath() const
+{
+	return m_exeFuserMount.get() ;
+}
+
+bool engines::engine::needsJava() const
+{
+	return this->executableFullPath().endsWith( ".jar" ) ;
 }
 
 bool engines::engine::isInstalled() const
@@ -498,9 +905,14 @@ bool engines::engine::backendRequireMountPath() const
 	return m_Options.backendRequireMountPath ;
 }
 
-bool engines::engine::backendRunsInBackGround() const
+bool engines::engine::runsInBackGround() const
 {
 	return m_Options.backendRunsInBackGround ;
+}
+
+bool engines::engine::runsInForeGround() const
+{
+	return !this->runsInBackGround() ;
 }
 
 bool engines::engine::acceptsSubType() const
@@ -536,6 +948,21 @@ bool engines::engine::takesTooLongToUnlock() const
 bool engines::engine::requiresPolkit() const
 {
 	return m_Options.requiresPolkit ;
+}
+
+bool engines::engine::createMountPath( const QString& e ) const
+{
+	return utility::createFolder( e ) ;
+}
+
+bool engines::engine::createCipherPath( const QString& e ) const
+{
+	return utility::createFolder( e ) ;
+}
+
+bool engines::engine::deleteFolder( const QString& e,int count ) const
+{
+	return utility::removeFolder( e,count ) ;
 }
 
 void engines::engine::GUICreateOptions( const engines::engine::createGUIOptions& e ) const
@@ -596,15 +1023,19 @@ const QString& engines::engine::releaseURL() const
 
 const QString& engines::engine::executableName() const
 {
-	return m_Options.executableName ;
+	if( m_Options.executableNames.isEmpty() ){
+
+		return _emptyQString ;
+	}else{
+		return m_Options.executableNames.at( 0 ) ;
+	}
 }
 
 const QString& engines::engine::name() const
 {
 	if( m_Options.names.isEmpty() ){
 
-		static QString s ;
-		return s ;
+		return _emptyQString ;
 	}else{
 		return m_Options.names.first() ;
 	}
@@ -614,8 +1045,7 @@ const QString& engines::engine::configFileName() const
 {
 	if( m_Options.configFileNames.isEmpty() ){
 
-		static QString s ;
-		return s ;
+		return _emptyQString ;
 	}else{
 		return m_Options.configFileNames.first() ;
 	}
@@ -703,14 +1133,19 @@ const QString& engines::engine::uiName() const
 	}
 }
 
-const QString& engines::engine::sshOptions() const
+const QString& engines::engine::defaultFavoritesMountOptions() const
 {
-	return m_Options.sshOptions ;
+	return m_Options.defaultFavoritesMountOptions ;
 }
 
 const QString& engines::engine::minimumVersion() const
 {
 	return m_Options.versionMinimum ;
+}
+
+const QString& engines::engine::sirikaliMinimumVersion() const
+{
+	return m_Options.sirikaliMinimumVersion ;
 }
 
 static bool _contains( const QString& e,const QStringList& m )
@@ -762,6 +1197,11 @@ engines::engine::status engines::engine::passAllRequirenments( const engines::en
 		return this->notFoundCode() ;
 	}
 
+	if( this->needsJava() && this->javaFullPath().isEmpty() ){
+
+		return engines::engine::status::javaNotFound ;
+	}
+
 	if( opt.key.isEmpty() && this->requiresAPassword( opt ) ){
 
 		return engines::engine::status::backendRequiresPassword ;
@@ -807,22 +1247,52 @@ engines::engine::status engines::engine::passAllRequirenments( const engines::en
 		}
 	}
 
-	const auto& v = this->minimumVersion() ;
+	if( this->customBackend() ){
 
-	if( this->customBackend() && !v.isEmpty() ){
+		const auto& e = this->sirikaliMinimumVersion() ;
 
-		auto s = this->installedVersion().greaterOrEqual( v ) ;
+		if( !e.isEmpty() ){
 
-		if( s.has_value() ){
+			engines::engineVersion m( e ) ;
 
-			if( s.value() ){
+			if( m.valid() ){
 
-				return engines::engine::status::success ;
+				if( m < utility::SiriKaliVersion() ){
+
+					return engines::engine::status::backendFailedToMeetSiriKaliMinimumVersion ;
+				}
 			}else{
-				return engine::engine::status::backEndFailedToMeetMinimumRequirenment ;
+				QString s = "Warning, failed to get sirikali required minimum version for backend \"%1\"" ;
+				utility::debug() << s.arg( this->name() ) ;
 			}
-		}else{
-			utility::debug() << "Trouble ahead, failed to get backend's version" ;
+		}
+
+		const auto& v = this->minimumVersion() ;
+
+		if( !v.isEmpty() ){
+
+			engines::engineVersion engineRequiredMinimum( v ) ;
+
+			const auto& engineInstalledVersion = this->installedVersion().get() ;
+
+			if( engineInstalledVersion.valid() ){
+
+				if( engineRequiredMinimum.valid() ){
+
+					if( engineInstalledVersion < engineRequiredMinimum ){
+
+						return engine::engine::status::backEndFailedToMeetMinimumRequirenment ;
+					}
+				}else{
+					QString s = "Warning, failed to get required minimum version for backend \"%1\"" ;
+
+					utility::debug() << s.arg( this->name() ) ;
+				}
+			}else{
+				QString s = "Warning, failed to get installed version for backend \"%1\"" ;
+
+				utility::debug() << s.arg( this->name() ) ;
+			}
 		}
 	}
 
@@ -835,6 +1305,15 @@ void engines::engine::updateOptions( engines::engine::cmdArgsList& e,bool s ) co
 
 		e.cipherFolder = utility::likeSshRemovePortNumber( e.cipherFolder ) ;
 	}
+}
+
+void engines::engine::updateOptions( QStringList& opts,
+				     const engines::engine::cmdArgsList& args,
+				     bool creating ) const
+{
+	Q_UNUSED( creating )
+	Q_UNUSED( opts )
+	Q_UNUSED( args )
 }
 
 void engines::engine::updateOptions( engines::engine::commandOptions& opts,
@@ -971,6 +1450,7 @@ engines::engines()
 		m_backends.emplace_back( std::make_unique< ecryptfs >() ) ;
 		m_backends.emplace_back( std::make_unique< sshfs >() ) ;
 		m_backends.emplace_back( std::make_unique< fscrypt >() ) ;
+		m_backends.emplace_back( std::make_unique< cryptomator >() ) ;
 	}
 
 	custom::addEngines( m_backends ) ;
@@ -1220,29 +1700,9 @@ QString engines::engine::cmdStatus::toString() const
 
 		return QObject::tr( "Backend Requires A Password." ) ;
 
-	case engines::engine::status::cryfsBadPassword :
+	case engines::engine::status::badPassword :
 
-		return QObject::tr( "Failed To Unlock A Cryfs Volume.\nWrong Password Entered." ) ;
-
-	case engines::engine::status::sshfsBadPassword :
-
-		return QObject::tr( "Failed To Connect To The Remote Computer.\nWrong Password Entered." ) ;
-
-	case engines::engine::status::encfsBadPassword :
-
-		return QObject::tr( "Failed To Unlock An Encfs Volume.\nWrong Password Entered." ) ;
-
-	case engines::engine::status::gocryptfsBadPassword :
-
-		return QObject::tr( "Failed To Unlock A Gocryptfs Volume.\nWrong Password Entered." ) ;
-
-	case engines::engine::status::ecryptfsBadPassword :
-
-		return QObject::tr( "Failed To Unlock An Ecryptfs Volume.\nWrong Password Entered." ) ;
-
-	case engines::engine::status::fscryptBadPassword :
-
-		return QObject::tr( "Failed To Unlock An Fscrypt Volume.\nWrong Password Entered." ) ;
+		return QObject::tr( "Failed To Unlock \"%1\" Volume.\nWrong Password Entered." ).arg( m_engine->name() ) ;
 
 	case engines::engine::status::fscryptKeyFileRequired :
 
@@ -1256,29 +1716,13 @@ QString engines::engine::cmdStatus::toString() const
 
 		return QObject::tr( "A Space Character Is Not Allowed In Paths When Using Ecryptfs Backend And Polkit." ) ;
 
-	case engines::engine::status::securefsBadPassword :
-
-		return QObject::tr( "Failed To Unlock A Securefs Volume.\nWrong Password Entered." ) ;
-
-	case engines::engine::status::customCommandBadPassword :
-
-		return QObject::tr( "Failed To Unlock A Custom Volume.\nWrong Password Entered." ) ;
-
-	case engines::engine::status::sshfsNotFound :
-
-		return QObject::tr( "Failed To Complete The Request.\nSshfs Executable Could Not Be Found." ) ;
-
-	case engines::engine::status::fscryptNotFound :
-
-		return QObject::tr( "Failed To Complete The Request.\nFscrypt Executable Could Not Be Found." ) ;
-
 	case engines::engine::status::backEndDoesNotSupportCustomConfigPath :
 
 		return QObject::tr( "Backend Does Not Support Custom Configuration File Path." ) ;
 
-	case engines::engine::status::cryfsNotFound :
+	case engines::engine::status::engineExecutableNotFound :
 
-		return QObject::tr( "Failed To Complete The Request.\nCryfs Executable Could Not Be Found." ) ;
+		return QObject::tr( "Failed To Complete The Request.\n%1 Executable Could Not Be Found." ).arg( m_engine->name() ) ;
 
 	case engines::engine::status::backendTimedOut :
 
@@ -1304,21 +1748,13 @@ QString engines::engine::cmdStatus::toString() const
 
 		return QObject::tr( "Mount Point Folder Path Is Not Empty." ) ;
 
-	case engines::engine::status::encfsNotFound :
-
-		return QObject::tr( "Failed To Complete The Request.\nEncfs Executable Could Not Be Found." ) ;
-
 	case engines::engine::status::ecryptfs_simpleNotFound :
 
 		return QObject::tr( "Failed To Complete The Request.\nEcryptfs-simple Executable Could Not Be Found." ) ;
 
-	case engines::engine::status::gocryptfsNotFound :
+	case engines::engine::status::javaNotFound :
 
-		return QObject::tr( "Failed To Complete The Request.\nGocryptfs Executable Could Not Be Found." ) ;
-
-	case engines::engine::status::securefsNotFound :
-
-		return QObject::tr( "Failed To Complete The Request.\nSecurefs Executable Could Not Be Found." ) ;
+		return QObject::tr( "Failed To Complete The Request.\nJava Executable Could Not Be Found." ) ;
 
 	case engines::engine::status::failedToCreateMountPoint :
 
@@ -1331,6 +1767,10 @@ QString engines::engine::cmdStatus::toString() const
 	case engines::engine::status::unknown :
 
 		return QObject::tr( "Failed To Unlock The Volume.\nNot Supported Volume Encountered." ) ;
+
+	case engines::engine::status::backendFailedToMeetSiriKaliMinimumVersion :
+
+		return QObject::tr( "Backend Requires Atleast Version \"%1\" Of SiriKali." ).arg( utility::SiriKaliVersion() ) ;
 
 	case engines::engine::status::backEndFailedToMeetMinimumRequirenment :
 
@@ -1346,10 +1786,6 @@ QString engines::engine::cmdStatus::toString() const
 	case engines::engine::status::fscryptPartialVolumeClose :
 
 		return QObject::tr( "Folder Not Fully Locked Because Some Files Are Still In Use." ) ;
-
-	case engines::engine::status::customCommandNotFound :
-
-		return QObject::tr( "Failed To Complete The Request.\nThe Executable For This Backend Could Not Be Found." ) ;
 
 	case engines::engine::status::invalidConfigFileName :
 
@@ -1409,19 +1845,6 @@ engines::engine::createGUIOptions::createOptions::createOptions( const engines::
 
 engines::engine::createGUIOptions::createOptions::createOptions() : success( false )
 {
-}
-
-engines::engine::mountGUIOptions::mountOptions::mountOptions( const volumeInfo& e ) :
-	idleTimeOut( e.idleTimeOut() ),
-	configFile( e.configFilePath() ),
-	keyFile( e.keyFile() )
-{
-	opts.unlockInReverseMode = e.reverseMode() ;
-
-	if( !e.mountOptions().isEmpty() ){
-
-		mountOpts = utility::split( e.mountOptions(),',' ) ;
-	}
 }
 
 engines::engine::mountGUIOptions::mountOptions::mountOptions( const favorites::entry& e ) :

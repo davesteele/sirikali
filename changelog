@@ -256,3 +256,15 @@ version 1.4.2(December 18,2019)
    existing entry.
 -- Add explicit support for extensions that do not use cipher path and use "google-drive-ocamlfuse"
    as a reference program.
+
+   version 1.4.8(December 01,2020)
+   [ALL]
+-- Mounting items in Favorites now respects Re Use Mount Point setting.
+
+   [LINUX]
+-- Add cryptomator CLI backend(https://github.com/mhogomchungu/cli).
+-- Kwallet now works when it was not build in at compile time by accessing it through dbus.
+-- Only show volumes unlocked by the current user by default.
+
+   [WINDOWS]
+-- Update Qt to version 5.15.1

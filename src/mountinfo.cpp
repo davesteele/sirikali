@@ -23,12 +23,12 @@
 #include "task.hpp"
 #include "win.h"
 #include "settings.h"
-#include "engines.h"
 #include "crypto.h"
+#include "processManager.h"
 
 #include <QMetaObject>
 #include <QtGlobal>
-
+#include <QFileInfo>
 #include <QFile>
 
 #include <vector>
@@ -59,7 +59,7 @@ static QString _getFileSystem( const QString& dev,const QString& fs )
 		 */
 		for( const auto& it : engines::instance().supportedEngines() ){
 
-			if( it->name() == dev ){
+			if( it->name().compare( dev,Qt::CaseInsensitive ) == 0 ){
 				/*
 				 * "dev" has a name of a backend we support, return it.
 				 */
@@ -93,17 +93,23 @@ static volumeInfo::List _qt_volumes()
 	return s ;
 }
 
-static volumeInfo::List _windows_volumes()
+static mountinfo::List _processManager_volumes()
 {
-	volumeInfo::List s ;
+	mountinfo::List s ;
 
-	for( const auto& e : SiriKali::Windows::getMountOptions() ){
+	auto& m = processManager::get() ;
+
+	m.removeInActive() ;
+
+	for( const auto& e : m.mountOptions() ){
 
 		auto fs = "fuse." + e.subtype ;
 
-		auto m = e.subtype + "@" + e.cipherFolder ;
+		auto mm = e.subtype + "@" + e.cipherFolder ;
 
-		s.emplace_back( std::move( m ),e.mountPointPath,std::move( fs ),e.mode ) ;
+		volumeInfo aa{ std::move( mm ),e.mountPointPath,std::move( fs ),e.mode } ;
+
+		s.emplace_back( mountinfo::volumeEntry{ e.engine,std::move( aa ) } ) ;
 	}
 
 	return s ;
@@ -121,7 +127,26 @@ static volumeInfo::List _linux_volumes()
 
 		if( m > 5 ){
 
-			const auto& q = k.at( 5 ) ;
+			/*
+			 * contains generic mount options
+			 */
+			auto q = k.at( 5 ) ;
+
+			/*
+			 * contains file system specific mount options
+			 */
+			const auto u = utility::split( k.at( m - 1 ),',' ) ;
+
+			/*
+			 * Combine the two mount options
+			 */
+			for( const auto& it : u ){
+
+				if( !q.contains( it ) ){
+
+					q.append( ',' + it ) ;
+				}
+			}
 
 			s.emplace_back( k.at( m - 2 ),k.at( 4 ),k.at( m - 3 ),q.mid( 0,2 ),q ) ;
 		}
@@ -140,7 +165,7 @@ static volumeInfo::List _unlocked_volumes()
 
 		}else if( utility::platformIsWindows() ){
 
-			return _windows_volumes() ;
+			return mountinfo::toVolumeInfoList( _processManager_volumes() ) ;
 		}else{
 			return _qt_volumes() ;
 		}
@@ -167,6 +192,11 @@ mountinfo::mountinfo( QObject * parent,
 	m_oldMountList( _unlocked_volumes() ),
 	m_dbusMonitor( [ this ]( const QString& e ){ this->autoMount( e ) ; },m_debug )
 {
+	processManager::get().updateVolumeList( [ this ](){
+
+		this->updateVolume() ;
+	} ) ;
+
 	if( utility::platformIsLinux() ){
 
 		this->linuxMonitor() ;
@@ -183,7 +213,7 @@ mountinfo::~mountinfo()
 {
 }
 
-static volumeInfo::FsEntry _decode( const engines::engine& engine,volumeInfo::FsEntry e )
+static mountinfo::volumeEntry _decode( const engines::engine& engine,volumeInfo&& e )
 {
 	auto _decode = []( QString& path,bool set_offset ){
 
@@ -208,59 +238,126 @@ static volumeInfo::FsEntry _decode( const engines::engine& engine,volumeInfo::Fs
 		return false ;
 	} ;
 
+	auto& cipherPath = e.cipherPath() ;
+	auto& mountPoint = e.mountPoint() ;
+	auto& fileSystem = e.fileSystem() ;
+
 	if( engine.setsCipherPath() ){
 
-		if( _starts_with( engine,e.cipherPath ) ){
+		if( _starts_with( engine,cipherPath ) ){
 
-			_decode( e.cipherPath,true ) ;
+			_decode( cipherPath,true ) ;
 		}else{
-			if( e.cipherPath.compare( engine.name(),Qt::CaseInsensitive ) ){
+			if( cipherPath.compare( engine.name(),Qt::CaseInsensitive ) ){
 
-				_decode( e.cipherPath,false ) ;
+				_decode( cipherPath,false ) ;
 			}else{
-				e.cipherPath = crypto::sha256( e.mountPoint ).mid( 0,20 ) ;
+				cipherPath = crypto::sha256( e.mountPoint() ).mid( 0,20 ) ;
 			}
 		}
 	}else{
-		e.cipherPath = crypto::sha256( e.mountPoint ).mid( 0,20 ) ;
+		cipherPath = crypto::sha256( mountPoint ).mid( 0,20 ) ;
 	}
 
-	_decode( e.mountPoint,false ) ;
+	_decode( mountPoint,false ) ;
 
 	const auto& n = engine.displayName() ;
 
 	if( n.isEmpty() ){
 
-		e.fileSystem.replace( "fuse.","" ) ;
+		fileSystem.replace( "fuse.","" ) ;
 
-		if( !e.fileSystem.isEmpty() ){
+		if( !fileSystem.isEmpty() ){
 
-			e.fileSystem.replace( 0,1,e.fileSystem.at( 0 ).toUpper() ) ;
+			fileSystem.replace( 0,1,fileSystem.at( 0 ).toUpper() ) ;
 		}
 	}else{
-		e.fileSystem = n ;
+		fileSystem = n ;
 
-		e.fileSystem.replace( 0,1,e.fileSystem.at( 0 ).toUpper() ) ;
+		fileSystem.replace( 0,1,fileSystem.at( 0 ).toUpper() ) ;
 	}
 
-	return e ;
+	return { engine,std::move( e ) } ;
 }
 
-Task::future< std::vector< volumeInfo > >& mountinfo::unlockedVolumes()
+static bool _unlocked_by_this_user( const engines::engine& engine,
+				    volumeInfo& e,
+				    const QString& userID )
 {
-	return Task::run( [](){
+	const auto& m = e.mountOptions() ;
 
-		std::vector< volumeInfo > e ;
+	if( utility::platformIsLinux() ){
 
-		const auto& engines = engines::instance() ;
+		if( m.contains( "user_id=" ) ){
 
-		for( auto&& it : _unlocked_volumes() ){
+			if( m.contains( userID ) ){
 
-			const auto& engine = engines.getByFsName( it.fileSystem ) ;
+				return true ;
+			}else{
+				auto msg = "Skipping a \"%1\" volume at %2\nbecause it was opened by a different user" ;
+				utility::debug() << QString( msg ).arg( engine.name(),e.cipherPath() ) ;
+				return false ;
+			}
+		}else{
+			auto msg = "Showing an unlocked volume because we could not figure out who unlocked it" ;
 
-			if( engine.known() ){
+			utility::debug() << msg ;
 
-				e.emplace_back( _decode( engine,std::move( it ) ) ) ;
+			return true ;
+		}
+	}else{
+		/*
+		 * Feature is only enabled in linux.
+		 */
+		return true ;
+	}
+}
+
+Task::future< mountinfo::List >& mountinfo::unlockedVolumes()
+{
+	return Task::run( [ m = _processManager_volumes() ]()mutable{
+
+		mountinfo::List e ;
+
+		if( utility::platformIsWindows() ){
+
+			/*
+			 *  All engines in windows run in the foreground
+			 */
+			for( auto&& it : m ){
+
+				e.emplace_back( _decode( it.engine,std::move( it.vInfo ) ) ) ;
+			}
+		}else{
+			const auto& engines   = engines::instance() ;
+			auto showFromAllUsers = settings::instance().showUnlockedVolumesFromAllUsers() ;
+			auto userID           = "user_id=" + utility::userIDAsString() ;
+
+			for( auto&& it : _unlocked_volumes() ){
+
+				const auto& engine = engines.getByFsName( it.fileSystem() ) ;
+
+				if( engine.known() && engine.runsInBackGround() ){
+					/*
+					 *  Add engines that run in the background
+					 */
+					if( showFromAllUsers ){
+
+						e.emplace_back( _decode( engine,std::move( it ) ) ) ;
+
+					}else if( _unlocked_by_this_user( engine,it,userID ) ){
+
+						e.emplace_back( _decode( engine,std::move( it ) ) ) ;
+					}
+				}
+			}
+
+			/*
+			 *  Add engines that run in the foreground
+			 */
+			for( auto&& it : m ){
+
+				e.emplace_back( _decode( it.engine,std::move( it.vInfo ) ) ) ;
 			}
 		}
 
@@ -291,7 +388,7 @@ void mountinfo::volumeUpdate()
 
 		for( const auto& it : m_oldMountList ){
 
-			if( it.cipherPath == e ){
+			if( it.cipherPath() == e ){
 
 				return false ;
 			}
@@ -308,9 +405,9 @@ void mountinfo::volumeUpdate()
 
 			for( const auto& it : m_newMountList ){
 
-				if( _mountedVolume( it.cipherPath ) ){
+				if( _mountedVolume( it.cipherPath() ) ){
 
-					this->autoMount( it.mountPoint ) ;
+					this->autoMount( it.mountPoint() ) ;
 				}
 			}
 		}
@@ -467,7 +564,6 @@ void mountinfo::qtMonitor()
 
 void mountinfo::windowsMonitor()
 {
-	SiriKali::Windows::updateVolumeList( [ this ]{ this->updateVolume() ; } ) ;
 }
 
 static QString _gvfs_fuse_path()
@@ -478,9 +574,9 @@ static QString _gvfs_fuse_path()
 
 		for( const auto& it : _unlocked_volumes() ){
 
-			if( it.fileSystem == "fuse.gvfsd-fuse" ){
+			if( it.fileSystem() == "fuse.gvfsd-fuse" ){
 
-				return it.mountPoint ;
+				return it.mountPoint() ;
 			}
 		}
 	}

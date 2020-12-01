@@ -47,9 +47,10 @@ static engines::engine::BaseOptions _setOptions()
 	s.setsCipherPath        = true ;
 	s.releaseURL            = "https://api.github.com/repos/mhogomchungu/ecryptfs-simple/releases" ;
 	s.passwordFormat        = "%{password}" ;
-	s.executableName        = "ecryptfs-simple" ;
 	s.incorrectPasswordText = "error: mount failed" ;
 	s.configFileArgument    = "--config=%{configFilePath}" ;
+	s.executableNames       = QStringList{ "ecryptfs-simple" } ;
+
 	s.configFileNames       = QStringList{ ".ecryptfs.config","ecryptfs.config" } ;
 	s.fuseNames             = QStringList{ "ecryptfs" } ;
 	s.names                 = QStringList{ "ecryptfs" } ;
@@ -94,7 +95,7 @@ static bool _requiresPolkit( const engines::engine& engine )
 ecryptfs::ecryptfs() :
 	engines::engine( _setOptions() ),
 	m_requirePolkit( _requiresPolkit( *this ) ),
-	m_exeSUFullPath( [](){ return engines::executableFullPath( "su" ) ; } )
+	m_exeSUFullPath( [](){ return engines::executableNotEngineFullPath( "su" ) ; } )
 {
 }
 
@@ -191,7 +192,7 @@ engines::engine::args ecryptfs::command( const QByteArray& password,
 					 const engines::engine::cmdArgsList& args,
 					 bool create ) const
 {
-	auto m = custom::set_command( *this,password,args,create ) ;
+	auto m = engines::engine::command( password,args,create ) ;
 
 	if( utility::miscOptions::instance().usePolkit() ){
 
@@ -220,7 +221,7 @@ engines::engine::status ecryptfs::errorCode( const QString& e,int s ) const
 
 	}else if( e.contains( this->incorrectPasswordText() ) ){
 
-		return engines::engine::status::ecryptfsBadPassword ;
+		return engines::engine::status::badPassword ;
 	}else{
 		return engines::engine::status::backendFail ;
 	}

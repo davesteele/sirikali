@@ -1,6 +1,6 @@
 /*
  *
- *  Copyright (c) 2018
+ *  Copyright (c) 2020
  *  name : Francis Banyikwa
  *  email: mhogomchungu@gmail.com
  *  This program is free software: you can redistribute it and/or modify
@@ -19,24 +19,23 @@
 
 #include "../engines.h"
 
-class securefs : public engines::engine
+class cryptomator : public engines::engine
 {
 public:
-	securefs() ;
+	cryptomator() ;
+
+	engines::engine::ownsCipherFolder ownsCipherPath( const QString& cipherPath,
+							  const QString& configPath ) const override ;
 
 	engines::engine::status errorCode( const QString& e,int s ) const override ;
 
-	bool requiresAPassword( const engines::engine::cmdArgsList& ) const override ;
-
-	void GUICreateOptions( const engines::engine::createGUIOptions& ) const override ;
-
 	void GUIMountOptions( const engines::engine::mountGUIOptions& ) const override ;
 
-	void updateOptions( engines::engine::cmdArgsList&,bool creating ) const override ;
+	engines::engine::status passAllRequirenments( const engines::engine::cmdArgsList& opt ) const override ;
 
-	void updateOptions( engines::engine::commandOptions& opts,
-			    const engines::engine::cmdArgsList& args,
-			    bool creating ) const override ;
+	void updateOptions( QStringList&,
+	                    const engines::engine::cmdArgsList& args,
+	                    bool creating ) const override ;
 private:
-	const engines::versionGreaterOrEqual m_version_greater_or_equal_0_11_1 ;
+	const engines::versionGreaterOrEqual m_version_greater_or_equal_0_5_0 ;
 } ;
