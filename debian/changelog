@@ -1,4 +1,4 @@
-sirikali (1.4.7-2) UNRELEASED; urgency=medium
+sirikali (1.4.8-1) unstable; urgency=medium
 
   [ Debian Janitor ]
   * Use secure URI in Homepage field.
@@ -6,7 +6,10 @@ sirikali (1.4.7-2) UNRELEASED; urgency=medium
   * Remove obsolete field Name from debian/upstream/metadata (already present in
     machine-readable debian/copyright).
 
- -- David Steele <steele@debian.org>  Fri, 07 Aug 2020 22:07:17 -0400
+  [ David Steele ]
+  * New upstream version (Closes: #975130).
+
+ -- David Steele <steele@debian.org>  Tue, 01 Dec 2020 12:36:35 -0500
 
 sirikali (1.4.7-1) unstable; urgency=medium
 
