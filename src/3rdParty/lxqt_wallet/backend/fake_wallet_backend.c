@@ -1,6 +1,6 @@
 /*
  *
- *  Copyright (c) 2018
+ *  Copyright (c) 2017
  *  name : Francis Banyikwa
  *  email: mhogomchungu@gmail.com
  *  This program is free software: you can redistribute it and/or modify
@@ -17,24 +17,27 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "../engines.h"
+#include "lxqtwallet.h"
 
-class securefs : public engines::engine
+int lxqt_wallet_exists( const char * wallet_name,
+			const char * application_name )
 {
-public:
-	securefs() ;
+	if( wallet_name && application_name ){}
 
-	bool requiresAPassword( const engines::engine::cmdArgsList& ) const override ;
+	return 0 ;
+}
 
-	void GUICreateOptions( const engines::engine::createGUIOptions& ) const override ;
+lxqt_wallet_error lxqt_wallet_delete_wallet( const char * wallet_name,
+					     const char * application_name )
+{
+	if( wallet_name && application_name ){}
+	return lxqt_wallet_no_error ;
+}
 
-	void GUIMountOptions( const engines::engine::mountGUIOptions& ) const override ;
+void lxqt_wallet_application_wallet_path( char * path_buffer,
+					  uint32_t path_buffer_size,
+					  const char * application_name )
+{
+	if( path_buffer && path_buffer_size && application_name ){}
+}
 
-	void updateOptions( engines::engine::cmdArgsList&,bool creating ) const override ;
-
-	void updateOptions( engines::engine::commandOptions& opts,
-			    const engines::engine::cmdArgsList& args,
-			    bool creating ) const override ;
-private:
-	const engines::versionGreaterOrEqual m_version_greater_or_equal_0_11_1 ;
-} ;

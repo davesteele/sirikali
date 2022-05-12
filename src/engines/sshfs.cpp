@@ -41,6 +41,7 @@ static engines::engine::BaseOptions _setOptions()
 	s.backendRequireMountPath     = true ;
 	s.backendRunsInBackGround     = true ;
 	s.usesOnlyMountPoint          = false ;
+	s.usesFuseArgumentSwitch      = true ;
 	s.likeSsh               = true ;
 	s.requiresPolkit        = false ;
 	s.customBackend         = false ;
@@ -146,12 +147,35 @@ void sshfs::updateOptions( engines::engine::commandOptions& opts,
 
 		if( utility::isDriveLetter( args.mountPoint ) ){
 
-			if( !exeOptions.contains( "--VolumePrefix=" ) &&
-					args.boolOptions.unlockInReverseMode ){
+			auto _volPrefix = []( QString& m ){
 
-				auto x = args.cipherFolder ;
+				if( m.size() > 15 + 192 ){
+					/*
+					 * 15 is the size of "--VolumePrefix=" and 192 is
+					 * the maximum size allowed to be stored in VolumePrefix.
+					 * If the value stored is more than 32 characters,
+					 * we truncate it to 189 characters and then add three dots.
+					 *
+					 * The 192 number is taken from winfsp source code: https://github.com/billziss-gh/winfsp/blob/c803ef24f8f777bc0c8c6a9571d70ce1d23116dd/inc/winfsp/fsctl.h#L83
+					 */
+					m = m.mid( 0,15 + 189 ) + "..." ;
+				}
+			} ;
+
+			auto m = exeOptions.optionStartsWith( "--VolumePrefix=" ) ;
+
+			if( m ){
+
+				_volPrefix( m.value() ) ;
+
+			}else if( args.boolOptions.unlockInReverseMode ){
+
+				auto x = "--VolumePrefix=\\mysshfs\\" + args.cipherFolder ;
 				x.replace( ":",";" ) ;
-				exeOptions.add( "--VolumePrefix=\\mysshfs\\" + x ) ;
+
+				_volPrefix( x ) ;
+
+				exeOptions.add( x ) ;
 			}
 		}
 	}
@@ -200,18 +224,6 @@ engines::engine::error sshfs::errorCode( const QString& e ) const
 		return engines::engine::error::Failed ;
 	}else{
 		return engines::engine::errorCode( e ) ;
-	}
-}
-
-engines::engine::status sshfs::errorCode( const QString& e,int s ) const
-{
-	Q_UNUSED( s )
-
-	if( e.contains( "cygfuse: initialization failed: winfsp" ) ){
-
-		return engines::engine::status::failedToLoadWinfsp ;
-	}else{
-		return engines::engine::status::backendFail ;
 	}
 }
 

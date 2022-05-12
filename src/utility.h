@@ -32,6 +32,7 @@
 #include <QDialog>
 #include <QEventLoop>
 #include <QTimer>
+#include <QDateTime>
 #include <QDir>
 #include <QPushButton>
 #include <QLineEdit>
@@ -49,6 +50,7 @@
 #include <utility>
 #include <vector>
 #include <type_traits>
+#include <chrono>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -298,6 +300,8 @@ namespace utility
 		utility::debug operator<<( const QStringList& ) ;
 	};
 
+	QStringList splitPreserveQuotes( const QString& e ) ;
+
 	bool platformIsLinux() ;
 	bool platformIsOSX() ;
 	bool platformIsWindows() ;
@@ -390,8 +394,7 @@ namespace utility
 	/*
 	 * Function must take an int and must return bool
 	 */
-	template< typename Function,
-		  std::enable_if_t< std::is_same< std::result_of_t< Function( int ) >,bool >::value,int > = 0 >
+	template< typename Function,Task::detail::has_bool_return_type<Function,int > = 0 >
 	static inline void Timer( int interval,Function&& function )
 	{
 		class Timer{
@@ -426,11 +429,9 @@ namespace utility
 	}
 
 	/*
-	 * Function must takes no argument and must returns void and it will
-	 * be called once when the interval pass
+	 * Function must takes no argument and will be called once when the interval pass
 	 */
-	template< typename Function,
-		  std::enable_if_t< std::is_void< std::result_of_t< Function() > >::value,int > = 0 >
+	template< typename Function,Task::detail::has_no_argument< Function > = 0 >
 	static inline void Timer( int interval,Function&& function )
 	{
 		utility::Timer( interval,[ function = std::forward< Function >( function ) ]( int s ){
@@ -600,14 +601,43 @@ namespace utility
 	class Task
 	{
 	public :
+		class moreOptions
+		{
+		public:
+			moreOptions( bool usePolkit = false ) : m_usePolkit( usePolkit )
+			{
+			}
+			moreOptions( bool usePolkit,bool likeSsh,utility2::LOGLEVEL logLevel ) :
+				m_usePolkit( usePolkit ),
+				m_likeSsh( likeSsh ),
+				m_logLevel( logLevel )
+			{
+			}
+			bool usePolkit() const
+			{
+				return m_usePolkit ;
+			}
+			const utility::bool_result& likeSsh() const
+			{
+				return m_likeSsh ;
+			}
+			const utility2::result< utility2::LOGLEVEL >& allowLogging() const
+			{
+				return m_logLevel ;
+			}
+		private:
+			bool m_usePolkit = false ;
+			utility::bool_result m_likeSsh ;
+			utility2::result< utility2::LOGLEVEL > m_logLevel ;
+		};
 		static ::Task::future< utility::Task >& run( const QString& exe,
 							     const QStringList& list,
-							     bool e ) ;
+							     const utility::Task::moreOptions& moreOpts ) ;
 
 		static ::Task::future< utility::Task >& run( const QString& exe,
 							     const QStringList& list,
 							     int,
-							     bool e ) ;
+							     const utility::Task::moreOptions& moreOpts ) ;
 
 		static ::Task::future< utility::Task >& run( const QString& exe,
 							     const QStringList& list,
@@ -671,8 +701,7 @@ namespace utility
 		      const QProcessEnvironment& env = utility::systemEnvironment(),
 		      const QByteArray& password = QByteArray(),
 		      std::function< void() > f = [](){},
-		      bool use_polkit = false,
-		      bool runs_in_background = true )
+		      const utility::Task::moreOptions& moreOpts = utility::Task::moreOptions() )
 		{
 			this->execute( exe,
 				       list,
@@ -680,14 +709,13 @@ namespace utility
 				       env,
 				       password,
 				       std::move( f ),
-				       use_polkit,
-				       runs_in_background ) ;
+				       moreOpts ) ;
 		}
 		Task( const QString& exe,
 		      const QStringList& list,
 		      const QProcessEnvironment& env,
 		      std::function< void() > f,
-		      bool use_polkit = false )
+		      const utility::Task::moreOptions& moreOpts = utility::Task::moreOptions() )
 		{
 			this->execute( exe,
 				       list,
@@ -695,8 +723,7 @@ namespace utility
 				       env,
 				       QByteArray(),
 				       std::move( f ),
-				       use_polkit,
-				       true ) ;
+				       moreOpts ) ;
 		}
 
 		enum class channel{ stdOut,stdError } ;
@@ -756,8 +783,7 @@ namespace utility
 			      const QProcessEnvironment& env,
 			      const QByteArray& password,
 			      std::function< void() > f,
-			      bool e,
-			      bool runs_in_background ) ;
+			      const utility::Task::moreOptions& boolOpts ) ;
 
 		QByteArray m_stdOut ;
 		QByteArray m_stdError ;
@@ -769,4 +795,29 @@ namespace utility
 	using task_result = utility2::result< utility::Task > ;
 }
 
+namespace utility
+{
+class unlockIntervalReporter
+{
+public:
+	static utility2::raii< unlockIntervalReporter > object( bool s )
+	{
+		return unlockIntervalReporter( s ) ;
+	}
+	unlockIntervalReporter( utility::bool_result s ) :
+		m_likeSsh( std::move( s ) ),
+		m_origTime( this->currentTime() )
+	{
+	}
+	void operator()() const
+	{
+		this->report() ;
+	}
+	void report() const ;
+private:
+	std::chrono::system_clock::time_point currentTime() const ;
+	utility::bool_result m_likeSsh ;
+	std::chrono::system_clock::time_point m_origTime ;
+};
+}
 #endif // MISCFUNCTIONS_H

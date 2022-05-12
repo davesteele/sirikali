@@ -21,6 +21,77 @@
 #include "systemsignalhandler.h"
 #include <memory>
 
+#include <QSocketNotifier>
+
+#include <sys/types.h>
+#include <unistd.h>
+#include <signal.h>
+
+/*
+ * How to handle signals in unix: https://doc.qt.io/archives/qt-5.6/unix-signals.html
+ */
+
+struct signalHandler
+{
+	struct socketPairs
+	{
+		socketPairs( systemSignalHandler::signal sig )
+		{
+			signal = sig ;
+		}
+		int reader() const
+		{
+			return sockpair[ 1 ] ;
+		}
+		int writer() const
+		{
+			return sockpair[ 0 ] ;
+		}
+
+		systemSignalHandler::signal signal ;
+		int sockpair[ 2 ] ;
+	} ;
+
+	static signalHandler& instance()
+	{
+		static signalHandler m ;
+
+		return m ;
+	}
+	static void function( int SIG )
+	{
+		for( const auto& it : signalHandler::instance().signalsManager ){
+
+			if( it.signal == static_cast< systemSignalHandler::signal >( SIG ) ){
+
+				char a = 1 ;
+
+				if( write( it.writer(),&a,sizeof( a ) ) ){}
+
+				break ;
+			}
+		}
+	}
+	socketPairs& addSignal( systemSignalHandler::signal SIG )
+	{
+		signalsManager.emplace_back( SIG ) ;
+		return signalsManager[ signalsManager.size() - 1 ] ;
+	}
+	std::function< void( systemSignalHandler::signal ) > callback ;
+	std::vector< signalHandler::socketPairs > signalsManager ;
+	QObject * parent ;
+} ;
+
+systemSignalHandler::systemSignalHandler( QObject * parent )
+{
+	signalHandler::instance().parent = parent ;
+}
+
+void systemSignalHandler::setHandle( std::function< void( systemSignalHandler::signal ) > function )
+{
+	signalHandler::instance().callback = std::move( function ) ;
+}
+
 #ifdef Q_OS_LINUX
 
 #include <sys/types.h>
@@ -30,99 +101,50 @@
 
 #include <QSocketNotifier>
 
-static int sighupFd[ 2 ] ;
-static int sigtermFd[ 2 ] ;
-
-static void setup_unix_signal_handlers()
+void systemSignalHandler::addSignal( systemSignalHandler::signal SIG )
 {
-	struct sigaction hup ;
-	struct sigaction term ;
+	auto& sHandler = signalHandler::instance() ;
 
-	hup.sa_handler = []( int q ){
+	auto& e = sHandler.addSignal( SIG ) ;
 
-		Q_UNUSED( q )
+	socketpair( AF_UNIX,SOCK_STREAM,0,e.sockpair ) ;
 
-		char a = 1 ;
+	struct sigaction action ;
 
-		if( ::write( sighupFd[ 0 ],&a,sizeof( a ) ) ){}
-	} ;
+	sigemptyset( &action.sa_mask ) ;
 
-	sigemptyset( &hup.sa_mask ) ;
-	hup.sa_flags = 0 ;
-	hup.sa_flags |= SA_RESTART ;
+	action.sa_flags = 0 ;
+	action.sa_flags |= SA_RESTART ;
 
-	sigaction( SIGHUP,&hup,nullptr ) ;
+	action.sa_handler = signalHandler::function ;
 
-	term.sa_handler = []( int q ){
+	sigaction( static_cast< int >( SIG ),&action,nullptr ) ;
 
-		Q_UNUSED( q )
+	auto mm = new QSocketNotifier( e.reader(),QSocketNotifier::Read,sHandler.parent ) ;
 
-		char a = 1 ;
+	QObject::connect( mm,&QSocketNotifier::activated,[ SIG,mm ]( int s ){
 
-		if( ::write( sigtermFd[ 0 ],&a,sizeof( a ) ) ){}
-	} ;
+		Q_UNUSED( s )
 
-	sigemptyset( &term.sa_mask ) ;
-	term.sa_flags |= SA_RESTART ;
+		auto& signalHandler = signalHandler::instance() ;
 
-	sigaction( SIGTERM,&term,nullptr ) ;
-}
+		mm->setEnabled( false ) ;
 
-systemSignalHandler::systemSignalHandler( QObject * parent,std::function< void( signal ) > function ) :
-	m_parent( parent ),m_function( std::move( function ) )
-{
-}
+		for( const auto& it : signalHandler.signalsManager ){
 
-void systemSignalHandler::listen()
-{
-	if( !settings::instance().unMountVolumesOnLogout() ){
+			if( it.signal == SIG ){
 
-		return ;
-	}
+				char tmp ;
 
-	setup_unix_signal_handlers() ;
+				read( it.reader(),&tmp,sizeof( tmp ) ) ;
 
-	::socketpair( AF_UNIX,SOCK_STREAM,0,sighupFd ) ;
+				signalHandler.callback( SIG ) ;
 
-	::socketpair(AF_UNIX,SOCK_STREAM,0,sigtermFd ) ;
+				mm->setEnabled( true ) ;
 
-	auto snHup = new QSocketNotifier( sighupFd[ 1 ],QSocketNotifier::Read,m_parent ) ;
-
-	QObject::connect( snHup,&QSocketNotifier::activated,[ snHup,this ]( int ){
-#if 1
-		snHup->setEnabled( false ) ;
-
-		m_function( signal::hup ) ;
-#else
-		snHup->setEnabled( false ) ;
-
-		char tmp ;
-
-		::read( sighupFd[ 1 ],&tmp,sizeof( tmp ) ) ;
-
-		m_function( signal::hup ) ;
-
-		snHup->setEnabled( true ) ;
-#endif
-	} ) ;
-
-	auto snTerm = new QSocketNotifier( sigtermFd[ 1 ],QSocketNotifier::Read,m_parent ) ;
-
-	QObject::connect( snTerm,&QSocketNotifier::activated,[ snTerm,this ]( int ){
-#if 1
-		snTerm->setEnabled( false ) ;
-		m_function( signal::term ) ;
-#else
-		snTerm->setEnabled( false ) ;
-
-		char tmp ;
-
-		::read( sighupFd[ 1 ],&tmp,sizeof( tmp ) ) ;
-
-		m_function( signal::term ) ;
-
-		snTerm->setEnabled( true ) ;
-#endif
+				break ;
+			}
+		}
 	} ) ;
 }
 
@@ -130,67 +152,18 @@ void systemSignalHandler::listen()
 
 #ifdef Q_OS_WIN
 
-#include <QApplication>
-#include <QAbstractNativeEventFilter>
-
-#include "utility.h"
-
-#include <windows.h>
-
-class eventFilter : public QObject,public QAbstractNativeEventFilter
+void systemSignalHandler::addSignal( systemSignalHandler::signal SIG )
 {
-public:
-	eventFilter( QObject * parent,std::function< void( systemSignalHandler::signal ) > function ) :
-		QObject( parent ),m_function( std::move( function ) )
-	{
-	}
-	bool nativeEventFilter( const QByteArray& eventType,void * message,long * result )
-	{
-		Q_UNUSED( eventType )
-		Q_UNUSED( result )
-
-		MSG * msg = reinterpret_cast< MSG * >( message ) ;
-
-		if( msg->message == WM_ENDSESSION ){
-
-			m_function( systemSignalHandler::signal::winEndSession ) ;
-
-			//return true ;
-		}
-
-		return false ;
-	}
-
-	std::function< void( systemSignalHandler::signal ) > m_function ;
-};
-
-systemSignalHandler::systemSignalHandler( QObject * parent,std::function< void( signal ) > function ) :
-	m_parent( parent ),m_function( std::move( function ) )
-{
-}
-
-void systemSignalHandler::listen()
-{
-	return ;
-
-	if( settings::instance().unMountVolumesOnLogout() ){
-
-		auto m = new eventFilter( m_parent,std::move( m_function ) ) ;
-		QApplication::instance()->installNativeEventFilter( m ) ;
-	}
+	Q_UNUSED( SIG )
 }
 
 #endif
 
 #ifdef Q_OS_MACOS
 
-systemSignalHandler::systemSignalHandler( QObject * parent,std::function< void( signal ) > function )
-	: m_parent( parent ),m_function( std::move( function ) )
+void systemSignalHandler::addSignal( systemSignalHandler::signal SIG )
 {
-}
-
-void systemSignalHandler::listen()
-{
+	Q_UNUSED( SIG )
 }
 
 #endif

@@ -46,6 +46,7 @@ static void _parse( engines::engine::BaseOptions& s,const SirikaliJson& json )
 	s.autoCreatesMountPoint           = json.getBool( "autoCreatesMountPoint",false ) ;
 	s.autoDeletesMountPoint           = json.getBool( "autoDeletesMountPoint",false ) ;
 	s.usesOnlyMountPoint              = json.getBool( "usesOnlyMountPoint",false ) ;
+	s.usesFuseArgumentSwitch          = json.getBool( "usesFuseArgumentSwitch",true ) ;
 
 	s.backendTimeout                  = json.getInterger( "backendTimeout",0 ) ;
 
@@ -84,7 +85,7 @@ static void _parse( engines::engine::BaseOptions& s,const SirikaliJson& json )
 
 	auto versionArgumentString        = json.getString( "versionArgumentString" ) ;
 	auto versionOutputStdOut          = json.getBool( "versionOutputStdOut",true ) ;
-	auto versionStringTextPosition    = json.getVector< int >( "versionStringTextPosition" ) ;
+	auto versionStringTextPosition    = json.getIntVector( "versionStringTextPosition" ) ;
 
 	if( !versionArgumentString.isEmpty() && versionStringTextPosition.size() > 1 ){
 
@@ -179,7 +180,7 @@ custom::custom( engines::engine::BaseOptions baseOpts ) :
 {
 }
 
-engines::engine::status custom::errorCode( const QString& e,int s ) const
+engines::engine::status custom::errorCode( const QString& e,const QString&,int s ) const
 {
 	const auto& m = this->incorrectPasswordCode() ;
 

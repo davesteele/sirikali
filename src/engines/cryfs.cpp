@@ -44,6 +44,7 @@ static engines::engine::BaseOptions _setOptions()
 	s.autoCreatesMountPoint       = false ;
 	s.autoDeletesMountPoint       = false ;
 	s.usesOnlyMountPoint          = false ;
+	s.usesFuseArgumentSwitch      = true ;
 	s.likeSsh               = false ;
 	s.requiresPolkit        = false ;
 	s.customBackend         = false ;
@@ -109,8 +110,16 @@ const QProcessEnvironment& cryfs::getProcessEnvironment() const
 	return m_env ;
 }
 
-engines::engine::status cryfs::errorCode( const QString& e,int s ) const
+engines::engine::status cryfs::errorCode( const QString& e,const QString& err,int s ) const
 {
+	if( s == 0 ){
+
+		if( err.contains( "[error]" ) ){
+
+			return engines::engine::status::backendCrashed ;
+		}
+	}
+
 	if( m_version_greater_or_equal_0_9_9 ){
 
 		/*
@@ -175,7 +184,7 @@ void cryfs::updateOptions( engines::engine::cmdArgsList& e,bool creating ) const
 
 engines::engine::status cryfs::passAllRequirenments( const engines::engine::cmdArgsList& opt ) const
 {
-	auto s = engines::engine::passAllRequirenments( opt ) ;	
+	auto s = engines::engine::passAllRequirenments( opt ) ;
 
 	if( s != engines::engine::status::success ){
 

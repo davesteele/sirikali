@@ -4,12 +4,28 @@ set_property( GLOBAL PROPERTY ALLOW_DUPLICATE_CUSTOM_TARGETS ON )
 
 project( sirikali )
 
-set( PGR_VERSION "1.4.8" )
-set( COPYRIGHT_YEARS "2016-2020" )
+set( PGR_VERSION "1.5.0" )
+set( COPYRIGHT_YEARS "2016-2022" )
 
 add_definitions( -Wextra -Wall -pedantic )
 
-set( CMAKE_CXX_STANDARD 14 )
+if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 10.0.0 )
+	set( CMAKE_CXX_STANDARD 20 )
+	MESSAGE( STATUS "Setting C++ version to C++20" )
+elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 10.0.0)
+	set( CMAKE_CXX_STANDARD 20 )
+	MESSAGE( STATUS "Setting C++ version to C++20" )
+else()
+	set( CMAKE_CXX_STANDARD 14 )
+	#This is necessary with old versions of cmake
+	add_definitions(-std=c++14)
+	MESSAGE( STATUS "Setting C++ version to C++14" )
+endif()
+
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    add_definitions(-Qunused-arguments)
+endif()
+
 set( CMAKE_CXX_STANDARD_REQUIRED ON )
 set( CMAKE_CXX_EXTENSIONS OFF)
 
@@ -85,15 +101,6 @@ endif()
 
 set( QT5 "true" )
 
-find_file( JSON_HEADER_PATH "nlohmann/json.hpp" )
-
-if( NOT JSON_HEADER_PATH )
-	set( JSON_HEADER_PATH "${PROJECT_SOURCE_DIR}/src/3rdParty/json/nlohmann/json.hpp" )
-endif()
-
-file( WRITE ${PROJECT_BINARY_DIR}/json.h "\n#include \"${JSON_HEADER_PATH}\"" )
-MESSAGE( STATUS "found json.hpp header file at: ${JSON_HEADER_PATH}" )
-
 if( WIN32 )
     set( INTERNAL_LXQT_WALLET "true" )
 else()
@@ -124,14 +131,14 @@ endif()
 
 if( UNIX AND NOT APPLE )
 
-        find_package( Qt5 COMPONENTS Core Widgets Network DBus REQUIRED )
+	find_package( Qt5 COMPONENTS Core Widgets Network DBus REQUIRED )
 
 	message( STATUS "Found Qt5Widgets, version  ${Qt5Widgets_VERSION}" )
 	message( STATUS "Found Qt5Core, version  ${Qt5Core_VERSION}" )
 	message( STATUS "Found Qt5Network, version  ${Qt5Network_VERSION}" )
 	message( STATUS "Found Qt5DBus, version  ${Qt5DBus_VERSION}" )
 else()
-        find_package( Qt5 COMPONENTS Core Widgets Network REQUIRED )
+	find_package( Qt5 COMPONENTS Core Widgets Network REQUIRED )
 
 	message( STATUS "Found Qt5Widgets, version  ${Qt5Widgets_VERSION}" )
 	message( STATUS "Found Qt5Core, version  ${Qt5Core_VERSION}" )
@@ -139,7 +146,7 @@ else()
 endif()
 
 pkg_check_modules( MCHUNGU_NETWORK mhogomchungu_network )
-pkg_check_modules( MCHUNGU_TASK mhogomchungu_task )
+#pkg_check_modules( MCHUNGU_TASK mhogomchungu_task )
 
 file( WRITE ${PROJECT_BINARY_DIR}/version.h "
 #ifndef THIS_VERSION
@@ -224,8 +231,6 @@ else()
 	endif()
 endif()
 
-add_definitions( -std=c++14 )
-
 set( UI_FILES 	src/sirikali.ui
 		src/keydialog.ui
 		src/dialogmsg.ui
@@ -291,6 +296,7 @@ set( SRC 	src/dialogok.cpp
 		src/keydialog.cpp
 		src/siritask.cpp
 		src/help.cpp
+		src/themes.cpp
 		src/createbackendwindow.cpp
 		src/engines.cpp
 		src/oneinstance.cpp
@@ -360,12 +366,10 @@ INCLUDE_DIRECTORIES( ${GCRYPT_INCLUDE_PATH} )
 if( APPLE )
 	add_executable( sirikali MACOSX_BUNDLE ${MOC} ${UI} ${SRC} ${TRAY_RC_SRCS} ${PROJECT_SOURCE_DIR}/icons/256x256/sirikali.icns )
 else()
-        if( WIN32)
-	        add_executable( sirikali WIN32 ${MOC} ${UI} ${SRC} ${TRAY_RC_SRCS} )
-
-		#add_executable( sirikali WIN32 ${MOC} ${UI} ${SRC} ${TRAY_RC_SRCS} src/win_icon.rc )
+	if( WIN32)
+		 add_executable( sirikali WIN32 ${MOC} ${UI} ${SRC} ${TRAY_RC_SRCS} )
 	else()
-                add_executable( sirikali ${MOC} ${UI} ${SRC} ${TRAY_RC_SRCS} )
+	                add_executable( sirikali ${MOC} ${UI} ${SRC} ${TRAY_RC_SRCS} )
 	endif()
 endif()
 
@@ -390,6 +394,10 @@ endif()
 message( STATUS "---------------------------------------------------------------------------" )
 message( STATUS "Building GUI components using Qt5" )
 message( STATUS "---------------------------------------------------------------------------\n\n" )
+
+if( WIN32 )
+    ADD_SUBDIRECTORY( src/sirikali_cppcryptfs )
+endif()
 
 if( WIN32 )
     set_target_properties( sirikali PROPERTIES COMPILE_FLAGS "-Wextra -Wall -s -pedantic" )
@@ -477,7 +485,6 @@ NoDisplay=false
 StartupNotify=true
 Terminal=false
 Type=Application
-MimeType=inode/directory;
 Categories=Security;Utility;Qt;X-MandrivaLinux-System-FileTools;\n")
 
 install( FILES ${PROJECT_BINARY_DIR}/io.github.mhogomchungu.sirikali.desktop
@@ -556,6 +563,7 @@ file( WRITE ${PROJECT_BINARY_DIR}/sirikali_windows_installer.iss
 #define MyAppExeName \"sirikali.exe\"
 #define MyLibrariesLocation \"C:\\projects\\SiriKali.libraries.Qt-${Qt5Core_VERSION}\\\"
 #define MyEXELocation \"${PROJECT_BINARY_DIR}\\sirikali.exe\"
+#define MyEXELocation1 \"${PROJECT_BINARY_DIR}\\src\\sirikali_cppcryptfs\\sirikali_cppcryptfs.exe\"
 #define MyOutPutPath  \"C:\\projects\\SiriKali.installer\\Qt-${Qt5Core_VERSION}\"
 #define MyGcryptLibraryPath \"C:\\projects\\sirikali\\libs\\lib\\\"
 #define MySourcesPath \"C:\\projects\\sirikali\\\"
@@ -584,6 +592,8 @@ Name: \"quicklaunchicon\"; Description: \"{cm:CreateQuickLaunchIcon}\"; GroupDes
 
 [Files]
 Source: {#MyEXELocation}; DestDir: {app}; Flags: ignoreversion
+
+Source: {#MyEXELocation1}; DestDir: {app}; Flags: ignoreversion
 
 Source: {#MyLibrariesLocation}\\*.dll; DestDir: {app} ; Flags: ignoreversion
 

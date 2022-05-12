@@ -178,11 +178,11 @@ public:
 	class versionGreaterOrEqual : public cache< utility::bool_result >{
 	public:
 	        versionGreaterOrEqual( bool m,const engines::engine& engine,int major,int minor,int patch ) :
-		        cache( [ =,&engine ](){ return this->setCallback( m,engine,major,minor,patch ) ; } )
+		        cache( [ this,&engine,m,major,minor,patch ](){ return this->setCallback( m,engine,major,minor,patch ) ; } )
 		{
 		}
 		versionGreaterOrEqual( bool m,const engines::engine& engine,const QString& e ) :
-		        cache( [ =,&engine ](){ return this->setCallback( m,engine,e ) ; } )
+		        cache( [ this,&engine,m,e ](){ return this->setCallback( m,engine,e ) ; } )
 		{
 		}
 		operator bool() const
@@ -218,8 +218,8 @@ public:
 		} ;
 
 		struct exe_args{
-			exe_args( const QString& e,const QStringList& s ) :
-				exe( e ),args( s )
+		        exe_args( QString e,QStringList s ) :
+			        exe( std::move( e ) ),args( std::move( s ) )
 			{
 			}
 			exe_args()
@@ -307,6 +307,7 @@ public:
 
 			invalidConfigFileName,
 			backendFail,
+			backendCrashed,
 			backendTimedOut,
 			unknown
 		} ;
@@ -494,6 +495,8 @@ public:
 			bool autoCreatesMountPoint ;
 			bool autoDeletesMountPoint ;
 			bool usesOnlyMountPoint ;
+			bool usesFuseArgumentSwitch ;
+			bool windowsCanUnlockInReadWriteMode = false ;
 
 			QByteArray passwordFormat ;
 			QString displayName ;
@@ -550,6 +553,9 @@ public:
 
 		static QString decodeSpecialCharactersConst( const QString& ) ;
 
+		static const QString& javaFullPath() ;
+		static const QString& fuserMountPath() ;
+
 		bool isInstalled() const ;
 		bool isNotInstalled() const ;
 		bool unknown() const ;
@@ -573,6 +579,8 @@ public:
 		bool requiresNoPassword() const ;
 		bool usesOnlyMountPoint() const ;
 		bool needsJava() const ;
+		bool usesFuseArgumentSwitch() const ;
+		bool windowsCanUnlocInReadWriteMode() const ;
 
 		engines::engine::status notFoundCode() const ;
 
@@ -583,16 +591,12 @@ public:
 		const QStringList& configFileNames() const ;
 		const QStringList& fileExtensions() const ;
 		const QStringList& volumePropertiesCommands() const ;
-		const QStringList& unMountCommand() const ;
-		const QStringList& windowsUnMountCommand() const ;
 
 		const engines::version& installedVersion() const ;
 
 		const QString& defaultFavoritesMountOptions() const ;
 
 		const QString& executableFullPath() const ;
-		const QString& javaFullPath() const ;
-		const QString& fuserMountPath() const ;
 
 		const QString& minimumVersion() const ;
 		const QString& sirikaliMinimumVersion() const ;
@@ -613,6 +617,7 @@ public:
 		const QString& windowsInstallPathRegistryKey() const ;
 		const QString& windowsInstallPathRegistryValue() const ;
 		const QString& windowsExecutableFolderPath() const ;
+		const QString& windowsUnmountExecutableFullPath() const ;
 
 		QByteArray setPassword( const QByteArray& ) const ;
 
@@ -620,10 +625,52 @@ public:
 
 		virtual ~engine() ;
 
-		struct terminate_process{
+		class terminate_process{
+		public:
+		        terminate_process( QProcess& exe,const QString& mountPath ) :
+				m_exe( &exe ),m_mountPath( mountPath )
+			{
+			}
+			terminate_process( const QString& mountPath ) :
+				m_exe( nullptr ),m_mountPath( mountPath )
+			{
+			}
+			qint64 PID() const
+			{
+				if( m_exe ){
 
-			QProcess& exe ;
-			const QString& mountPath ;
+					return m_exe->processId() ;
+				}else{
+					utility::debug() << "Warning, accessing invalid entry in terminate_process::PID" ;
+					return 0 ;
+				}
+			}
+			const QString& mountPath() const
+			{
+				 return m_mountPath ;
+			}
+			void terminate() const
+			{
+				if( m_exe ){
+
+					m_exe->terminate() ;
+				}else{
+					utility::debug() << "Warning, accessing invalid entry in terminate_process::terminate" ;
+				}
+			}
+			bool waitForFinished() const
+			{
+				if( m_exe ){
+
+					return utility::waitForFinished( *m_exe ) ;
+				}else{
+					utility::debug() << "Warning, accessing invalid entry in terminate_process::waitForFinished" ;
+					return false ;
+				}
+			}
+		private:
+			QProcess * m_exe ;
+			const QString& m_mountPath ;
 		};
 
 		struct terminate_result{
@@ -632,6 +679,10 @@ public:
 			QString exe ;
 			QStringList args ;
 		} ;
+
+		engines::engine::exe_args unMountCommand( const engines::engine::terminate_process& e ) const ;
+
+		virtual const QStringList& windowsUnmountCommand() const ;
 
 		virtual terminate_result terminateProcess( const terminate_process& ) const ;
 
@@ -651,6 +702,8 @@ public:
 		virtual bool requiresAPassword( const engines::engine::cmdArgsList& ) const ;
 
 		virtual bool takesTooLongToUnlock() const ;
+
+		virtual QByteArray prepareBackend() const ;
 
 		virtual engine::engine::status passAllRequirenments( const engines::engine::cmdArgsList& ) const ;
 
@@ -675,6 +728,9 @@ public:
 
 		virtual const QProcessEnvironment& getProcessEnvironment() const ;
 
+
+		virtual utility2::LOGLEVEL allowLogging( const QStringList& ) const ;
+
 		virtual bool requiresPolkit() const ;
 
 		virtual bool createMountPath( const QString& ) const ;
@@ -687,7 +743,7 @@ public:
 				      const engines::engine::cmdArgsList& args,
 				      bool create ) const ;
 
-		virtual engines::engine::status errorCode( const QString& e,int s ) const ;
+		virtual engines::engine::status errorCode( const QString& e,const QString& err,int s ) const ;
 
 		virtual void GUICreateOptions( const createGUIOptions& ) const ;
 
@@ -708,14 +764,6 @@ public:
 				void add( E&& e )
 				{
 					m_options.append( e ) ;
-				}
-				void add( fuseOptions&& e )
-				{
-					_add( e ) ;
-				}
-				void add( fuseOptions& e )
-				{
-					_add( e ) ;
 				}
 				template< typename E,typename ... T >
 				void add( E&& e,T&& ... m )
@@ -748,7 +796,7 @@ public:
 				{
 					return m_options ;
 				}
-				QString extractStartsWith( const QString& e )
+				utility2::result< QString > extractStartsWith( const QString& e )
 				{
 					for( int i = 0 ; i < m_options.size() ; i++ ){
 
@@ -760,9 +808,19 @@ public:
 
 					return {} ;
 				}
-			private:
-				void _add( const fuseOptions& s ) ;
+				utility2::result_ref< QString& > optionStartsWith( const QString& e )
+				{
+					for( int i = 0 ; i < m_options.size() ; i++ ){
 
+						if( m_options[ i ].startsWith( e ) ){
+
+							return m_options[ i ] ;
+						}
+					}
+
+					return {} ;
+				}
+			private:
 				QStringList& m_options ;
 			};
 

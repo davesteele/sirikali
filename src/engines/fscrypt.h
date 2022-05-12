@@ -32,6 +32,8 @@ public:
 	engines::engine::ownsCipherFolder ownsCipherPath( const QString& cipherPath,
 							  const QString& configPath ) const override ;
 
+	utility2::LOGLEVEL allowLogging( const QStringList& ) const override ;
+
 	bool requiresAPassword( const engines::engine::cmdArgsList& ) const override ;
 
 	void updateOptions( engines::engine::cmdArgsList&,bool ) const override ;
@@ -41,7 +43,7 @@ public:
 	Task::future< QString >& volumeProperties( const QString& cipherFolder,
 						   const QString& mountPoint ) const override ;
 
-	engines::engine::status errorCode( const QString& e,int s ) const override ;
+	engines::engine::status errorCode( const QString& e,const QString& err,int s ) const override ;
 
 	void GUICreateOptions( const engines::engine::createGUIOptions& ) const override ;
 

@@ -1,4 +1,4 @@
-﻿/*
+/*
  *
  *  Copyright (c) 2012-2015
  *  name : Francis Banyikwa
@@ -79,7 +79,8 @@ public:
 	static int run( const QStringList&,int argc,char * argv[] ) ;
 	static int unlockVolume( const QStringList&,secrets& ) ;
 
-	sirikali( const QStringList& ) ;
+	sirikali( const QStringList&,QApplication& ) ;
+	void start() ;
 	~sirikali() ;
 private slots:
 	void addToFavorites( void ) ;
@@ -89,7 +90,6 @@ private slots:
 	void FAQ( void ) ;
 	void hideWindow( void ) ;
 	void setUpApp( const QString& ) ;
-	void start() ;
 	void autoUpdateCheck( void ) ;
 	void volumeProperties() ;
 	void genericVolumeProperties( void ) ;
@@ -105,7 +105,6 @@ private slots:
 	void createVolume( QAction * = nullptr ) ;
 	void unMountAll( void ) ;
 	void emergencyShutDown( void ) ;
-	std::function< void( systemSignalHandler::signal ) > getEmergencyShutDown() ;
 	void unMountAllAndQuit( void ) ;
 	void pbUmount( void ) ;
 	void slotTrayClicked( QSystemTrayIcon::ActivationReason = QSystemTrayIcon::Trigger ) ;
@@ -167,6 +166,25 @@ private:
 						 bool skipUnknown = false,
 						 bool autoSetAutoMount = false ) ;
 
+	template< typename ... Args >
+	void autoUnlockAutoMount( favorites::volEntry&& vEntry,Args&& ... args )
+	{
+		favorites::volumeList s ;
+		s.emplace_back( std::move( vEntry ) ) ;
+
+		this->autoUnlockAutoMount( std::move( s ),
+					   std::forward< Args >( args ) ... ) ;
+	}
+
+	template< typename ... Args >
+	void autoUnlockAutoMount( favorites::volumeList&& volList,Args&& ... args )
+	{
+		auto mm = this->autoUnlockVolumes( std::move( volList ),
+						   std::forward< Args >( args ) ... ) ;
+
+		this->mountMultipleVolumes( std::move( mm ) ) ;
+	}
+
 	struct mountedEntry{
 		const QString& cipherPath ;
 		const QString& mountPoint ;
@@ -190,7 +208,9 @@ private:
 		}
 	}
 
-	engines::engine::cmdStatus unMountVolume( const sirikali::mountedEntry& ) ;
+	engines::engine::cmdStatus unMountVolume( const sirikali::mountedEntry&,bool = false ) ;
+
+	QApplication& m_app ;
 
 	Ui::sirikali * m_ui = nullptr ;
 
@@ -275,6 +295,33 @@ private:
 		int m_token = -1 ;
 		bool m_allowEnableAll = true ;
 	} m_allowEnableAll ;
+};
+
+class starter : public QObject
+{
+	Q_OBJECT
+public:
+	starter( const QStringList& args,QApplication& app ) : m_args( args ),m_app( app )
+	{
+		QMetaObject::invokeMethod( this,"start",Qt::QueuedConnection ) ;
+	}
+	~starter()
+	{
+	}
+	int exec()
+	{
+		return m_app.exec() ;
+	}
+private slots :
+	void start()
+	{
+		m_sirikali = std::make_unique< sirikali >( m_args,m_app ) ;
+		m_sirikali->start() ;
+	}
+private:
+	const QStringList& m_args ;
+	QApplication& m_app ;
+	std::unique_ptr< sirikali > m_sirikali ;
 };
 
 #endif // MAINWINDOW_H

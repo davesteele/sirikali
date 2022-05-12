@@ -1,4 +1,4 @@
-﻿/*
+/*
  *
  *  Copyright (c) 2012-2015
  *  name : Francis Banyikwa
@@ -164,6 +164,9 @@ class keyDialog : public QDialog
 	Q_OBJECT
 public:
 	struct entry{
+		entry()
+		{
+		}
 		entry( favorites::volEntry e ) :
 			volEntry( std::move( e ) ),
 			engine( volEntry.favorite().volumePath,volEntry.favorite().configFilePath )
@@ -282,7 +285,7 @@ private slots:
 	void pbSetKeyKeyFile( void ) ;
 	void pbSetKey( void ) ;
 	void pbSetKeyCancel( void ) ;
-private :	
+private :
 	void key( void ) ;
 	void yubiKey( void ) ;
 	void secretStorage( void ) ;
@@ -340,6 +343,7 @@ private :
 	bool m_hmac ;
 	bool m_closeGUI = false ;
 	bool m_enableUsingPassword = false ;
+	bool m_windowsCanUnlockReadOnlyMode = true ;
 
 	engines::engine::mOpts m_mountOptions ;
 	engines::engine::cOpts m_createOptions ;

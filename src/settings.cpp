@@ -239,12 +239,12 @@ bool settings::enableRevealingPasswords()
 
 bool settings::enableHighDpiScaling()
 {
-	if( !m_settings.contains( "EnableHighDpiScaling" ) ){
+	if( !m_settings.contains( "EnableHighDpiScalingV1" ) ){
 
-		m_settings.setValue( "EnableHighDpiScaling",false ) ;
+		m_settings.setValue( "EnableHighDpiScalingV1",true ) ;
 	}
 
-	return m_settings.value( "EnableHighDpiScaling" ).toBool() ;
+	return m_settings.value( "EnableHighDpiScalingV1" ).toBool() ;
 }
 
 void settings::enableHighDpiScaling( bool e )
@@ -271,7 +271,7 @@ QByteArray settings::enabledHighDpiScalingFactor()
 {
 	if( !m_settings.contains( "EnabledHighDpiScalingFactor" ) ){
 
-		m_settings.setValue( "EnabledHighDpiScalingFactor","1.1" ) ;
+		m_settings.setValue( "EnabledHighDpiScalingFactor","1.0" ) ;
 	}
 
 	return m_settings.value( "EnabledHighDpiScalingFactor" ).toByteArray() ;
@@ -294,8 +294,35 @@ static QString _file_manager()
 
 	if( utility::platformIsLinux() ){
 
+		struct{
+			const char * name ;
+			const char * exe_name ;
+
+		}fm[] = { { "KDE","dolphin" },
+			  { "GNOME","nautilus" },
+			  { nullptr,nullptr } } ;
+
 		s = "xdg-open" ;
 		e = engines::executableFullPath( s ) ;
+
+		auto DE = QProcessEnvironment::systemEnvironment().value( "XDG_CURRENT_DESKTOP" ) ;
+
+		for( size_t i = 0 ; fm[ i ].name != nullptr ; i++ ){
+
+			const auto& it = fm[ i ] ;
+
+			if( DE.contains( it.name,Qt::CaseInsensitive ) ){
+
+				auto m = engines::executableFullPath( it.exe_name ) ;
+
+				if( QFile::exists( m ) ){
+
+					return m ;
+				}
+
+				break ;
+			}
+		}
 
 	}else if( utility::platformIsOSX() ){
 
@@ -342,9 +369,15 @@ void settings::scaleGUI()
 	if( this->enableHighDpiScaling() ){
 
 		QApplication::setAttribute( Qt::AA_EnableHighDpiScaling ) ;
-
-		qputenv( "QT_SCALE_FACTOR",this->enabledHighDpiScalingFactor() ) ;
 	}
+
+	auto a = this->enabledHighDpiScalingFactor() ;
+
+	if( a != "1.0" ){
+
+		qputenv( "QT_SCALE_FACTOR",a ) ;
+	}
+
 #endif
 }
 
@@ -356,14 +389,14 @@ QString settings::fileManager()
 
 		if( e.isEmpty() ){
 
-			settings::setFileManager( QString() ) ;
+			this->setFileManager( QString() ) ;
 
 			return m_settings.value( "FileManagerOpener" ).toString() ;
 		}else{
 			return e ;
 		}
 	}else{
-		settings::setFileManager( QString() ) ;
+		this->setFileManager( QString() ) ;
 		return m_settings.value( "FileManagerOpener" ).toString() ;
 	}
 }
@@ -428,7 +461,7 @@ QString settings::ConfigLocation()
 
 			m_settings.setValue( "ConfigLocation",m.first() + "/SiriKali/" ) ;
 		}else{
-			//TODO: what to do here???
+			m_settings.setValue( "ConfigLocation",QDir::homePath() + "/.config/SiriKali/" ) ;
 		}
 	}
 
@@ -687,7 +720,7 @@ bool settings::startMinimized()
 
 		return m_settings.value( "StartMinimized" ).toBool() ;
 	}else{
-		bool s = false  ;
+		bool s = false ;
 
 		m_settings.setValue( "StartMinimized",s ) ;
 
@@ -907,6 +940,21 @@ bool settings::autoMountFavoritesOnStartUp()
 	}
 }
 
+bool settings::useDarkMode()
+{
+	if( !m_settings.contains( "UseDarkMode" ) ){
+
+		m_settings.setValue( "UseDarkMode",false ) ;
+	}
+
+	return m_settings.value( "UseDarkMode" ).toBool() ;
+}
+
+void settings::useDarkMode( bool e )
+{
+	m_settings.setValue( "UseDarkMode",e ) ;
+}
+
 void settings::autoMountFavoritesOnStartUp( bool e )
 {
 	m_settings.setValue( "AutoMountFavoritesOnStartUp",e ) ;
@@ -940,7 +988,7 @@ void settings::autoMountBackEnd( const settings::walletBackEnd& e )
 
 			return "windows_DPAPI" ;
 		}else{
-			return "none" ;			
+			return "none" ;
 		}
 	}() ) ;
 }

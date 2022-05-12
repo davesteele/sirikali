@@ -22,16 +22,16 @@
 
 #include <QObject>
 #include <functional>
+#include <vector>
 
 class systemSignalHandler
 {
 public:
-	enum class signal{ hup,term,winEndSession } ;
-	systemSignalHandler( QObject * parent,std::function< void( signal ) > ) ;
-	void listen() ;
+	enum class signal{ HUP = 1,INT = 2,QUIT = 3,TERM = 15,WINDOWS_END_SESSION } ;
+	void setHandle( std::function< void( systemSignalHandler::signal ) > function ) ;
+	void addSignal( systemSignalHandler::signal SIG ) ;
+	systemSignalHandler( QObject * parent ) ;
 private:
-	QObject * m_parent ;
-	std::function< void( signal ) > m_function ;
-} ;
+};
 
 #endif

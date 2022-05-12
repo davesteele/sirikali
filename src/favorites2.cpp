@@ -139,6 +139,16 @@ favorites2::favorites2( QWidget * parent,
 		m_settings.showFavoritesInContextMenu( e ) ;
 	} ) ;
 
+	connect( m_ui->cbSetMountPathNotPrefix,&QCheckBox::stateChanged,[ this ]( int s ){
+
+		if( s == Qt::CheckState::Checked ){
+
+			m_ui->labelMountPointPrefix->setText( tr( "Mount Point Path" ) ) ;
+		}else{
+			m_ui->labelMountPointPrefix->setText( tr( "Mount Point Prefix" ) ) ;
+		}
+	} ) ;
+
 	connect( m_ui->cbAllowExternalToolsToReadPasswords,&QCheckBox::toggled,[ this ]( bool e ){
 
 		m_settings.allowExternalToolsToReadPasswords( e ) ;
@@ -278,7 +288,7 @@ favorites2::favorites2( QWidget * parent,
 
 				m_ui->lineEditVolumePath->setText( a ) ;
 			}else{
-				m_ui->lineEditVolumePath->setText( b.toLower() + " " + a ) ;
+				m_ui->lineEditVolumePath->setText( b + " " + a ) ;
 			}
 
 			m_ui->tabWidget->setCurrentIndex( 2 ) ;
@@ -480,6 +490,17 @@ favorites2::favorites2( QWidget * parent,
 		this->HideUI() ;
 	} ) ;
 
+	m_ui->tableWidget->setContextMenuPolicy( Qt::ContextMenuPolicy::CustomContextMenu ) ;
+
+	connect( m_ui->tableWidget,&QTableWidget::customContextMenuRequested,[ this ]( const QPoint& ){
+
+		QMenu m ;
+
+		this->setMenu( m ) ;
+
+		m.exec( QCursor::pos() ) ;
+	} ) ;
+
 	connect( m_ui->tableWidget,&QTableWidget::itemClicked,[ this ]( QTableWidgetItem * item ){
 
 		const auto& volumes = favorites::instance().readFavorites() ;
@@ -596,30 +617,39 @@ favorites2::favorites2( QWidget * parent,
 
 	auto optionsMenu = new QMenu( this ) ;
 
-	optionsMenu->setFont( this->font() ) ;
+	this->setMenu( *optionsMenu ) ;
 
-	connect( optionsMenu->addAction( tr( "Toggle AutoMount" ) ),&QAction::triggered,[ this ](){
+	m_ui->pbOptions->setMenu( optionsMenu ) ;
+
+	this->ShowUI() ;
+}
+
+void favorites2::setMenu( QMenu& m )
+{
+	m.setFont( this->font() ) ;
+
+	connect( m.addAction( tr( "Toggle AutoMount" ) ),&QAction::triggered,[ this ](){
 
 		this->toggleAutoMount() ;
 	} ) ;
 
-	optionsMenu->addSeparator() ;
+	m.addSeparator() ;
 
-	connect( optionsMenu->addAction( tr( "Edit" ) ),&QAction::triggered,[ this ](){
+	connect( m.addAction( tr( "Edit" ) ),&QAction::triggered,[ this ](){
 
 		this->edit() ;
 	} ) ;
 
-	optionsMenu->addSeparator() ;
+	m.addSeparator() ;
 
-	connect( optionsMenu->addAction( tr( "Remove Selected Entry" ) ),&QAction::triggered,[ this ](){
+	connect( m.addAction( tr( "Remove Selected Entry" ) ),&QAction::triggered,[ this ](){
 
 		this->removeEntryFromFavoriteList() ;
 	} ) ;
 
-	optionsMenu->addSeparator() ;
+	m.addSeparator() ;
 
-	connect( optionsMenu->addAction( tr( "Add Entry To Default Wallet" ) ),&QAction::triggered,[ this ](){
+	connect( m.addAction( tr( "Add Entry To Default Wallet" ) ),&QAction::triggered,[ this ](){
 
 		auto table = m_ui->tableWidget ;
 
@@ -640,13 +670,9 @@ favorites2::favorites2( QWidget * parent,
 		}
 	} ) ;
 
-	optionsMenu->addSeparator() ;
+	m.addSeparator() ;
 
-	optionsMenu->addAction( tr( "Cancel" ) ) ;
-
-	m_ui->pbOptions->setMenu( optionsMenu ) ;
-
-	this->ShowUI() ;
+	m.addAction( tr( "Cancel" ) ) ;
 }
 
 favorites2::~favorites2()
@@ -924,12 +950,12 @@ void favorites2::tabChanged( int index )
 
 		m_volPathFav.clear() ;
 
-		for( const auto& it : favorites::instance().readFavorites() ){
+		favorites::instance().entries( [ & ]( const favorites::entry& e ){
 
-			const auto& s = it.volumePath ;
+			const auto& s = e.volumePath ;
 
 			m_volPathFav.addAction( s )->setObjectName( s ) ;
-		}
+		} ) ;
 
 		m_ui->pbVolumePathFromFavorites->setMenu( &m_volPathFav ) ;
 	}else{
@@ -965,7 +991,7 @@ void favorites2::updateVolumeList( const std::vector<favorites::entry>& e,const 
 {
 	_updateList( m_ui->tableWidget,this->font(),e,volPath ) ;
 
-	auto _update = [ & ]()->const favorites::entry&{
+	this->setVolumeProperties( [ & ]()->utility2::result_ref< const favorites::entry& >{
 
 		for( const auto& it : e ){
 
@@ -975,10 +1001,8 @@ void favorites2::updateVolumeList( const std::vector<favorites::entry>& e,const 
 			}
 		}
 
-		return favorites::instance().unknown() ;
-	} ;
-
-	this->setVolumeProperties( _update() ) ;
+		return {} ;
+	}() ) ;
 }
 
 void favorites2::updateVolumeList( const std::vector< favorites::entry >& e,size_t row )
@@ -1017,11 +1041,11 @@ void favorites2::toggleAutoMount()
 
 		auto row = table->currentRow() ;
 
-		const auto& e = this->getEntry( row ) ;
+		auto e = this->getEntry( row ) ;
 
-		if( !e.volumePath.isEmpty() ){
+		if( e.has_value() ){
 
-			auto f = e ;
+			auto f = e.value() ;
 
 			f.autoMount.toggle() ;
 
@@ -1032,7 +1056,9 @@ void favorites2::toggleAutoMount()
 				m_ui->textEditAutoMount->setText( "false" ) ;
 			}
 
-			favorites::instance().replaceFavorite( e,f ) ;
+			favorites::instance().replaceFavorite( e.value(),f ) ;
+		}else{
+			utility::debug() << "Warning: favorites2::toggleAutoMount() out of range" ;
 		}
 	}
 }
@@ -1123,11 +1149,18 @@ void favorites2::removeEntryFromFavoriteList()
 
 		auto row = table->currentRow() ;
 
-		favorites::instance().removeFavoriteEntry( this->getEntry( row ) ) ;
+		auto aa = this->getEntry( row ) ;
 
-		const auto& volumes = favorites::instance().readFavorites() ;
+		if( aa.has_value() ){
 
-		this->updateVolumeList( volumes,volumes.size() - 1 ) ;
+			favorites::instance().removeFavoriteEntry( aa.value() ) ;
+
+			const auto& volumes = favorites::instance().readFavorites() ;
+
+			this->updateVolumeList( volumes,volumes.size() - 1 ) ;
+		}else{
+			utility::debug() << "Warning: favorites2::removeEntryFromFavoriteList() out of range" ;
+		}
 	}
 }
 
@@ -1138,11 +1171,22 @@ void favorites2::updateFavorite( bool edit )
 	utility::hideQWidget thisWidget( this ) ;
 
 	const auto type = m_ui->lineEditVolumeType->toPlainText() ;
-	const auto dev  = m_ui->lineEditEncryptedFolderPath->toPlainText() ;
+	const auto dev  = QDir::fromNativeSeparators( m_ui->lineEditEncryptedFolderPath->toPlainText() ) ;
 	const auto path = m_ui->lineEditMountPath->toPlainText() ;
 
 	const auto& engine = engines::instance().getByName( type ) ;
 
+	if( engine.likeSsh() ){
+
+		if( !dev.contains( '@' ) || !dev.contains( ':' ) ){
+
+			thisWidget.hide() ;
+			msg.ShowUIOK( tr( "ERROR!" ),tr( "Sshfs Remote Path Must Be In Below Format:\nwoof@example.com:/remote/path" ) ) ;
+			thisWidget.show() ;
+
+			return ;
+		}
+	}
 	if( dev.isEmpty() ){
 
 		thisWidget.hide() ;
@@ -1158,7 +1202,7 @@ void favorites2::updateFavorite( bool edit )
 
 	bool likeSsh = false ;
 
-	auto dev_path = [ & ](){		
+	auto dev_path = [ & ](){
 
 		if( type.isEmpty() ){
 
@@ -1217,21 +1261,31 @@ void favorites2::updateFavorite( bool edit )
 
 		const auto& f = this->getEntry( m_editRow ) ;
 
-		if( engine.known() && engine.usesOnlyMountPoint() ){
+		if( f.has_value() ){
 
-			e.mountPointPath = dev ;
+			if( engine.known() && engine.usesOnlyMountPoint() ){
+
+				e.mountPointPath = dev ;
+			}
+
+			favorites::instance().replaceFavorite( f.value(),e ) ;
+		}else{
+			utility::debug() << "Warning: favorites2::getEntry() out of range" ;
 		}
-
-		favorites::instance().replaceFavorite( f,e ) ;
 	}else{
 		if( utility::platformIsWindows() ){
 
 			if( !utility::isDriveLetter( path ) ){
 
+				if( !m_ui->cbSetMountPathNotPrefix->isChecked() ){
+
+					e.mountPointPath = path + "/" + utility::split( dev,'/' ).last() ;
+				}			}
+		}else{
+			if( !m_ui->cbSetMountPathNotPrefix->isChecked() ){
+
 				e.mountPointPath = path + "/" + utility::split( dev,'/' ).last() ;
 			}
-		}else{
-			e.mountPointPath = path + "/" + utility::split( dev,'/' ).last() ;
 		}
 
 		auto a = favorites::instance().add( e ) ;
@@ -1294,6 +1348,13 @@ void favorites2::folderPath()
 	if( !e.isEmpty() ){
 
 		m_ui->lineEditEncryptedFolderPath->setText( e ) ;
+
+		const auto& engine = engines::instance().getByPaths( e ) ;
+
+		if( engine->known() && !engine->hasConfigFile() ){
+
+			m_ui->lineEditVolumeType->setText( engine->uiName() ) ;
+		}
 	}
 }
 
@@ -1304,6 +1365,13 @@ void favorites2::filePath()
 	if( !e.isEmpty() ){
 
 		m_ui->lineEditEncryptedFolderPath->setText( e ) ;
+
+		const auto& engine = engines::instance().getByPaths( e ) ;
+
+		if( engine->known() && !engine->hasConfigFile() ){
+
+			m_ui->lineEditVolumeType->setText( engine->uiName() ) ;
+		}
 	}
 }
 
@@ -1338,24 +1406,6 @@ void favorites2::shortcutPressed()
 	this->itemClicked( m_ui->tableWidget->currentItem(),false ) ;
 }
 
-void favorites2::devicePathTextChange( QString txt )
-{
-	if( txt.isEmpty() ){
-
-		m_ui->lineEditMountPath->clear() ;
-	}else{
-		auto s = txt.split( "/" ).last() ;
-
-		if( s.isEmpty() ){
-
-			m_ui->lineEditMountPath->setText( txt ) ;
-		}else{
-			auto m = m_settings.mountPath( s ) ;
-			m_ui->lineEditMountPath->setText( m ) ;
-		}
-	}
-}
-
 void favorites2::clearEditVariables()
 {
 	m_ui->lineEditVolumeType->clear() ;
@@ -1384,10 +1434,10 @@ void favorites2::HideUI()
 }
 
 void favorites2::checkFavoritesConsistency()
-{	
+{
 }
 
-const favorites::entry& favorites2::getEntry( int row )
+utility2::result_ref< const favorites::entry& > favorites2::getEntry( int row )
 {
 	auto m = static_cast< size_t >( row ) ;
 
@@ -1399,7 +1449,7 @@ const favorites::entry& favorites2::getEntry( int row )
 
 		return volumes[ m ] ;
 	}else{
-		return ff.unknown() ;
+		return {} ;
 	}
 }
 
@@ -1425,12 +1475,19 @@ QString favorites2::getExistingDirectory( const QString& r )
 	return utility::getExistingDirectory( this,r,QDir::homePath() ) ;
 }
 
-void favorites2::setVolumeProperties( const favorites::entry& e )
+void favorites2::setVolumeProperties( utility2::result_ref< const favorites::entry& > ee )
 {
-	if( !e.hasValue() ){
+	const auto& e = [ & ](){
 
-		utility::debug() << "Warning: Unknown Favorite Entry Encountered in favorites2::setVolumeProperties" ;
-	}
+		if( ee.has_value() ){
+
+			return ee.value() ;
+		}else{
+			utility::debug() << "Warning: Unknown Favorite Entry Encountered in favorites2::setVolumeProperties" ;
+
+			return favorites::entry::empty() ;
+		}
+	}() ;
 
 	m_ui->textEditMountPoint->setText( e.mountPointPath ) ;
 

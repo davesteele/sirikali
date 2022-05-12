@@ -77,8 +77,8 @@ private :
 	void edit( void ) ;
 	void configPath( void ) ;
 	void removeEntryFromFavoriteList( void ) ;
-	void add( void ) ;
 	void cancel( void ) ;
+	void setMenu( QMenu& ) ;
 	void folderPath( void ) ;
 	void filePath( void ) ;
 	void mountPointPath( void ) ;
@@ -86,9 +86,8 @@ private :
 	void itemClicked( QTableWidgetItem * current,bool ) ;
 	void itemClicked( QTableWidgetItem * current ) ;
 	void shortcutPressed( void ) ;
-	void devicePathTextChange( QString ) ;
 	void clearEditVariables() ;
-	void setVolumeProperties( const favorites::entry& e ) ;
+	void setVolumeProperties( utility2::result_ref< const favorites::entry& > e ) ;
 	void clearVolumeProperties() ;
 	void ShowUI() ;
 	void HideUI( void ) ;
@@ -96,7 +95,7 @@ private :
 	void setUiLikeSsh( const QString& cipherPath,const engines::engine& engine ) ;
 	void setDefaultUI( const engines::engine& ) ;
 	QStringList readAllKeys() ;
-	const favorites::entry& getEntry( int ) ;
+	utility2::result_ref< const favorites::entry& > getEntry( int ) ;
 	QString getExistingFile( const QString& ) ;
 	QString getExistingDirectory( const QString& ) ;
 	void closeEvent( QCloseEvent * ) ;

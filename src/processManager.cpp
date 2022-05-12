@@ -19,7 +19,7 @@
 
 #include "processManager.h"
 
-static const char * _backEndTimedOut       = "BackendTimedOut" ;
+static const char * _backEndTimedOut = "BackendTimedOut" ;
 
 struct result
 {
@@ -49,16 +49,17 @@ static QString _make_path( QString e,encode s )
 }
 
 template< typename Function >
-static result _read( QProcess& exe,Function function )
+static result _read( QProcess& exe,const engines::engine& engine,Function function )
 {
 	QByteArray m ;
 	QByteArray s ;
 
-	int counter = 1 ;
 	int notRunningCounter = 0 ;
 	int maxNotRunningCounter = 2 ;
 
 	engines::engine::error r ;
+
+	auto raii = utility::unlockIntervalReporter::object( engine.likeSsh() ) ;
 
 	while( true ){
 
@@ -96,14 +97,11 @@ static result _read( QProcess& exe,Function function )
 			if( r == engines::engine::error::Continue ){
 
 				utility::Task::suspendForOneSecond() ;
-				counter++ ;
 			}else{
 				break ;
 			}
 		}
 	}
-
-	utility::debug() << "Backend took " + QString::number( counter ) + " seconds to unlock a volume" ;
 
 	return { r,std::move( m ) } ;
 }
@@ -116,7 +114,7 @@ static result _getProcessOutput( QProcess& exe,const engines::engine& engine )
 
 		int counter = 0 ;
 
-		return _read( exe,[ & ]( const QString& e ){
+		return _read( exe,engine,[ & ]( const QString& e ){
 
 			if( counter < timeOut ){
 
@@ -127,7 +125,7 @@ static result _getProcessOutput( QProcess& exe,const engines::engine& engine )
 			}
 		} ) ;
 	}else{
-		return _read( exe,[ & ]( const QString& e ){
+		return _read( exe,engine,[ & ]( const QString& e ){
 
 			return engine.errorCode( e ) ;
 		} ) ;
@@ -157,13 +155,25 @@ Task::process::result processManager::run( const processManager::opts& s )
 	}
 }
 
-bool processManager::backEndTimedOut( const QString& e)
+bool processManager::backEndTimedOut( const QString& e )
 {
 	return e == _backEndTimedOut ;
 }
 
 Task::process::result processManager::add( const processManager::opts& opts )
 {
+	auto error = []( const QByteArray& e ){
+
+		return Task::process::result( e,QByteArray(),-1,0,true ) ;
+	} ;
+
+	auto e = opts.engine.prepareBackend() ;
+
+	if( !e.isEmpty() ){
+
+		return error( e ) ;
+	}
+
 	auto exe = utility2::unique_qptr< QProcess >() ;
 
 	exe->setProcessEnvironment( opts.engine.getProcessEnvironment() ) ;
@@ -178,11 +188,6 @@ Task::process::result processManager::add( const processManager::opts& opts )
 	logger.showText( opts.args.cmd,opts.args.cmd_args ) ;
 
 	auto m = _getProcessOutput( *exe,opts.engine ) ;
-
-	auto error = []( const QByteArray& e ){
-
-		return Task::process::result( e,QByteArray(),-1,0,true ) ;
-	} ;
 
 	auto s = [ & ](){
 
@@ -302,11 +307,33 @@ QString processManager::volumeProperties( const QString& mm ) const
 
 			m = QObject::tr( "Mount Options:\n\n" ) ;
 
-			for( const auto& it : e.arguments() ){
+			const auto& s = e.arguments() ;
 
-				if( it != "-o" ){
+			if( s.contains( "--password" ) ){
 
-					m += it + "\n" ;
+				auto e = s ;
+
+				for( int i = 0 ; i < e.size() ; i++ ){
+
+					const auto& it = e[ i ] ;
+
+					if( it != "-o" ){
+
+						if( it == "--password" && i + 1 < e.size() ){
+
+							e[ i + 1 ] = "<redacted>" ;
+						}
+
+						m += it + "\n" ;
+					}
+				}
+			}else{
+				for( const auto& it : s ){
+
+					if( it != "-o" ){
+
+						m += it + "\n" ;
+					}
 				}
 			}
 

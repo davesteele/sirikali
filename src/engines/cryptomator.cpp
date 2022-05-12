@@ -38,6 +38,7 @@ static engines::engine::BaseOptions _setOptions()
 	s.autoCreatesMountPoint       = false ;
 	s.autoDeletesMountPoint       = false ;
 	s.usesOnlyMountPoint          = false ;
+	s.usesFuseArgumentSwitch      = false ;
 	s.likeSsh               = false ;
 	s.requiresPolkit        = false ;
 	s.customBackend         = false ;
@@ -48,7 +49,7 @@ static engines::engine::BaseOptions _setOptions()
 	s.setsCipherPath        = true ;
 	s.acceptsSubType        = true ;
 	s.acceptsVolName        = false ;
-	s.releaseURL            = "https://api.github.com/repos/cryptomator/cli/releases" ;
+	s.releaseURL            = "https://api.github.com/repos/mhogomchungu/cli/releases" ;
 	s.passwordFormat        = "" ;
 	s.incorrectPasswordText = "InvalidPassphraseException" ;
 	s.configFileArgument    = "" ;
@@ -57,11 +58,10 @@ static engines::engine::BaseOptions _setOptions()
 	s.volumePropertiesCommands = QStringList{} ;
 	s.windowsUnMountCommand    = QStringList{} ;
 	s.configFileNames          = QStringList{ "masterkey.cryptomator" } ;
-	s.fuseNames                = QStringList{ "fuse.Cryptomator" } ;
+	s.fuseNames                = QStringList{ "fuse.cryptomator" } ;
 	s.names                    = QStringList{ "cryptomator" } ;
 	s.failedToMountList        = QStringList{ " ERROR ","Exception","fuse: unknown option" } ;
 	s.successfulMountedList    = QStringList{ "Mounted to" } ;
-	s.unMountCommand           = QStringList{ "fusermount","-u","%{mountPoint}" } ;
 	s.notFoundCode             = engines::engine::status::engineExecutableNotFound ;
 	s.versionInfo              = { { "--version",true,0,0 } } ;
 	s.versionMinimum           = "0.4.5" ;
@@ -74,7 +74,7 @@ static engines::engine::BaseOptions _setOptions()
 
 cryptomator::cryptomator() :
 	engines::engine( _setOptions() ),
-	m_version_greater_or_equal_0_5_0( false,*this,this->minimumVersion() )
+	m_version_greater_or_equal_0_4_5( false,*this,this->minimumVersion() )
 {
 }
 
@@ -86,28 +86,6 @@ engines::engine::ownsCipherFolder cryptomator::ownsCipherPath( const QString& ci
 	return { s,cipherPath,configPath } ;
 }
 
-void cryptomator::updateOptions( QStringList& opts,
-				 const engines::engine::cmdArgsList& e,
-				 bool creating ) const
-{
-	Q_UNUSED( creating )
-	Q_UNUSED( e )
-
-	opts.removeOne( "-o" ) ;
-}
-
-engines::engine::status cryptomator::errorCode( const QString& e,int s ) const
-{
-	Q_UNUSED( s )
-
-	if( e.contains( this->incorrectPasswordText() ) ){
-
-		return engines::engine::status::badPassword ;
-	}else{
-		return engines::engine::status::backendFail ;
-	}
-}
-
 void cryptomator::GUIMountOptions( const engines::engine::mountGUIOptions& s ) const
 {
 	auto& e = options::instance( *this,s ) ;
@@ -117,13 +95,14 @@ void cryptomator::GUIMountOptions( const engines::engine::mountGUIOptions& s ) c
 	ee.enableIdleTime = false ;
 	ee.enableCheckBox = false ;
 	ee.enableKeyFile  = false ;
+	ee.enableConfigFile = false ;
 
 	e.ShowUI() ;
 }
 
 engines::engine::status cryptomator::passAllRequirenments( const engines::engine::cmdArgsList& opt ) const
 {
-	if( m_version_greater_or_equal_0_5_0 ){
+	if( m_version_greater_or_equal_0_4_5 ){
 
 		return engines::engine::passAllRequirenments( opt ) ;
 	}else{

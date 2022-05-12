@@ -33,7 +33,6 @@
 #include "utility.h"
 #include "dialogmsg.h"
 #include "siritask.h"
-#include "json.h"
 #include "checkforupdateswindow.h"
 #include "engines.h"
 
@@ -84,7 +83,7 @@ private:
 #include "checkforupdateswindow.h"
 
 class checkUpdates
-{	
+{
 public:
 	static bool hasNetworkSupport()
 	{

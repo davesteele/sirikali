@@ -30,14 +30,14 @@ public:
 
 	const QProcessEnvironment& getProcessEnvironment() const override ;
 
-	engines::engine::status errorCode( const QString& e,int s ) const override ;
+	engines::engine::status errorCode( const QString& e,const QString&,int s ) const override ;
 
 	engines::engine::status passAllRequirenments( const engines::engine::cmdArgsList& opt ) const override ;
 
 	void GUICreateOptions( const createGUIOptions& ) const override ;
 
 	void GUIMountOptions( const mountGUIOptions& ) const override ;
-private:	
+private:
 	QProcessEnvironment setEnv() const ;
 	const QProcessEnvironment m_env ;
 	const engines::versionGreaterOrEqual m_version_greater_or_equal_0_10_0 ;

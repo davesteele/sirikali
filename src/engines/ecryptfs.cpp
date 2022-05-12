@@ -211,19 +211,15 @@ engines::engine::args ecryptfs::command( const QByteArray& password,
 	}
 }
 
-engines::engine::status ecryptfs::errorCode( const QString& e,int s ) const
+engines::engine::status ecryptfs::errorCode( const QString& e,const QString& err,int s ) const
 {
 	Q_UNUSED( s )
 
 	if( e.contains( "Operation not permitted" ) ){
 
 		return engines::engine::status::failedToStartPolkit ;
-
-	}else if( e.contains( this->incorrectPasswordText() ) ){
-
-		return engines::engine::status::badPassword ;
 	}else{
-		return engines::engine::status::backendFail ;
+		return engines::engine::errorCode( e,err,s ) ;
 	}
 }
 

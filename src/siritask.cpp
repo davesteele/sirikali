@@ -199,9 +199,9 @@ engines::engine::cmdStatus siritask::encryptedFolderUnMount( const siritask::unm
 
 	const auto& fileSystem = e.engine.name() ;
 
-	if( fav.hasValue() ){
+	if( fav.has_value() ){
 
-		const auto& m = fav ;
+		const auto& m = fav.value() ;
 
 		auto& a = e.cipherFolder ;
 		auto& b = e.mountPoint ;
@@ -217,7 +217,7 @@ engines::engine::cmdStatus siritask::encryptedFolderUnMount( const siritask::unm
 
 		return s ;
 	}else{
-		return _unmount( { e.cipherFolder,e.mountPoint,e.engine,e.numberOfAttempts }  ) ;
+		return _unmount( { e.cipherFolder,e.mountPoint,e.engine,e.numberOfAttempts } ) ;
 	}
 }
 
@@ -251,22 +251,27 @@ static utility::Task _run_task_0( const run_task& e )
 	}else{
 		const auto& s = e.engine.getProcessEnvironment() ;
 
+		utility::Task::moreOptions opts( e.engine.requiresPolkit(),
+						 e.engine.likeSsh(),
+						 e.engine.allowLogging( e.args.cmd_args ) ) ;
+
 		return utility::Task( e.args.cmd,
 				      e.args.cmd_args,
 				      -1,
 				      s,
 				      e.password,
 				      [](){},
-				      e.engine.requiresPolkit(),
-				      e.engine.runsInBackGround() ) ;
+				      opts ) ;
 	}
 }
 
 static utility::Task _run_task( const run_task& e )
 {
-	const auto& m = favorites::instance().readFavorite( e.opts.cipherFolder,e.opts.mountPoint ) ;
+	const auto& mm = favorites::instance().readFavorite( e.opts.cipherFolder,e.opts.mountPoint ) ;
 
-	if( m.hasValue() ){
+	if( mm.has_value() ){
+
+		const auto& m = mm.value() ;
 
 		auto& a = e.opts.cipherFolder ;
 		auto& b = e.opts.mountPoint ;
@@ -308,7 +313,23 @@ static engines::engine::cmdStatus _cmd( const cmd_args& e )
 
 	auto s = _run_task( { cmd,e } ) ;
 
-	if( s.success() ){
+	if( utility::platformIsNOTWindows() && e.engine.name() == "Cryfs" ){
+
+		auto n = engine.errorCode( s.stdOut(),s.stdError(),s.exitCode() ) ;
+
+		if( s.success() ){
+
+			if( n == engines::engine::status::backendCrashed ){
+
+				return { n,engine,s.stdError() } ;
+			}else{
+				return { engines::engine::status::success,engine } ;
+			}
+		}else{
+			return { n,engine,s.stdOut() } ;
+		}
+
+	}else if( s.success() ){
 
 		return { engines::engine::status::success,engine } ;
 	}else{
@@ -322,7 +343,7 @@ static engines::engine::cmdStatus _cmd( const cmd_args& e )
 
 		auto ss = s.stdError().isEmpty() ? s.stdOut() : s.stdError() ;
 
-		auto n = engine.errorCode( ss,s.exitCode() ) ;
+		auto n = engine.errorCode( ss,ss,s.exitCode() ) ;
 
 		return { n,engine,ss } ;
 	}
@@ -521,7 +542,7 @@ static engines::engine::cmdStatus _create( const siritask::create& s )
 
 static void _warning( const QString& e )
 {
-	auto a = "ERROR!!\n " + e + "siritask::encryptedFolderMount is"  ;
+	auto a = "ERROR!!\n " + e + "siritask::encryptedFolderMount is" ;
 	auto b = "running from a background thread" ;
 
 	utility::debug() << a + b ;
