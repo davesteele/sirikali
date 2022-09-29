@@ -1,5 +1,21 @@
 version=4
 
-opts=pgpsigurlmangle=s/$/.asc/,dversionmangle=s/\+dfsg1//,repacksuffix=+dfsg1 \
-https://github.com/mhogomchungu/sirikali/releases \
-/mhogomchungu/sirikali/releases/download/.+/SiriKali-(.*)\.tar\.xz
+# GitHub has recently (9/22) changed the behavior of the releases page in a way
+# that breaks watch files [1]. This file works around that by looking for files on
+# the 'tags' page, then rewriting them to reference the expected file on the
+# 'releases' page, and then verifies using the corresponding signature file.
+#
+# [1]: https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=1019696
+#
+# Specifically, it:
+#   * Fixes the expected package name in the file using filenamemangle
+#   * Uses downloadurlmangle to reference the Releases page
+#     * while changing the extension from .gz to .xz
+#   * Uses pgpsigurlmangle to reference the expected signature file
+#
+# To port, change "mhogomchungu" to the appropriate user name.
+
+opts=downloadurlmangle=s/archive\/refs\/tags\/(.*)\.tar\.gz/releases\/download\/$1\/@PACKAGE@-$1\.tar\.xz/,\
+pgpsigurlmangle=s/$/.asc/,dversionmangle=s/\+dfsg1//,repacksuffix=+dfsg1 \
+https://github.com/mhogomchungu/@PACKAGE@/tags \
+/mhogomchungu/@PACKAGE@/archive/refs/tags/(.*)\.tar\.gz
