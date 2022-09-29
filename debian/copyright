@@ -10,10 +10,6 @@ Files: src/sirikali.appdata.xml
 Copyright: 2016 David Steele <steele@debian.org>
 License: CC0-1.0
 
-Files: src/3rdParty/json/nlohmann/*
-Copyright: (c) 2013-2016 Niels Lohmann <http://nlohmann.me>.
-License: Expat
-
 Files: src/3rdParty/lxqt_wallet/*
 Copyright: 2013-2016 Mhogo Mchungu <mhogomchungu@gmail.com>
 License: BSD-2-clause
