@@ -4,25 +4,18 @@ set_property( GLOBAL PROPERTY ALLOW_DUPLICATE_CUSTOM_TARGETS ON )
 
 project( sirikali )
 
-set( PGR_VERSION "1.5.0" )
-set( COPYRIGHT_YEARS "2016-2022" )
+set( PGR_VERSION "1.5.1" )
+set( COPYRIGHT_YEARS "2016-2023" )
 
-add_definitions( -Wextra -Wall -pedantic )
+set( CMAKE_CXX_STANDARD 14 )
 
-if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 10.0.0 )
-	set( CMAKE_CXX_STANDARD 20 )
-	MESSAGE( STATUS "Setting C++ version to C++20" )
-elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 10.0.0)
-	set( CMAKE_CXX_STANDARD 20 )
-	MESSAGE( STATUS "Setting C++ version to C++20" )
-else()
-	set( CMAKE_CXX_STANDARD 14 )
-	#This is necessary with old versions of cmake
-	add_definitions(-std=c++14)
-	MESSAGE( STATUS "Setting C++ version to C++14" )
+MESSAGE( STATUS "Setting C++ version to C++14" )
+if(${CMAKE_VERSION} VERSION_LESS "3.1.0")
+        message("Warning your cmake version is too old(<3.1.0) and code my not compile")
+        add_definitions(-std=c++14)
 endif()
 
-if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     add_definitions(-Qunused-arguments)
 endif()
 
@@ -145,7 +138,6 @@ else()
 	message( STATUS "Found Qt5Network, version  ${Qt5Network_VERSION}" )
 endif()
 
-pkg_check_modules( MCHUNGU_NETWORK mhogomchungu_network )
 #pkg_check_modules( MCHUNGU_TASK mhogomchungu_task )
 
 file( WRITE ${PROJECT_BINARY_DIR}/version.h "
@@ -159,20 +151,7 @@ file( WRITE ${PROJECT_BINARY_DIR}/version.h "
 #endif
 \n" )
 
-if(NONETWORKSUPPORT)
-        file(WRITE  ${PROJECT_BINARY_DIR}/network_support.h "\n#define HAS_NETWORK_SUPPORT 0\n")
-	message( STATUS "---------------------------------------------------------------------------" )
-	message( STATUS "network support is disabled" )
-	message( STATUS "---------------------------------------------------------------------------" )
-else()
-        file(WRITE  ${PROJECT_BINARY_DIR}/network_support.h "\n#define HAS_NETWORK_SUPPORT 1\n")
-
-	message( STATUS "---------------------------------------------------------------------------" )
-	message( STATUS "mhogomchungu_network library will be provided by an internal library" )
-	message( STATUS "---------------------------------------------------------------------------" )
-	ADD_SUBDIRECTORY( src/3rdParty/NetworkAccessManager )
-	include_directories( src/3rdParty/NetworkAccessManager )
-endif()
+file(WRITE  ${PROJECT_BINARY_DIR}/network_support.h "\n#define HAS_NETWORK_SUPPORT 1\n")
 
 if( MCHUNGU_TASK_FOUND )
 
@@ -365,11 +344,15 @@ INCLUDE_DIRECTORIES( ${GCRYPT_INCLUDE_PATH} )
 
 if( APPLE )
 	add_executable( sirikali MACOSX_BUNDLE ${MOC} ${UI} ${SRC} ${TRAY_RC_SRCS} ${PROJECT_SOURCE_DIR}/icons/256x256/sirikali.icns )
+	set_target_properties( sirikali PROPERTIES COMPILE_FLAGS "-Wextra -Wall -s -fPIC -pedantic")
 else()
-	if( WIN32)
-		 add_executable( sirikali WIN32 ${MOC} ${UI} ${SRC} ${TRAY_RC_SRCS} )
+	if( WIN32 )
+		 set(APP_ICON_RESOURCE_WINDOWS "${CMAKE_CURRENT_SOURCE_DIR}/src/appicon.rc" )
+		 add_executable( sirikali WIN32 ${MOC} ${UI} ${SRC} ${TRAY_RC_SRCS} ${APP_ICON_RESOURCE_WINDOWS} )
+		 set_target_properties( sirikali PROPERTIES COMPILE_FLAGS "-Wextra -Wall -s -pedantic")
 	else()
-	                add_executable( sirikali ${MOC} ${UI} ${SRC} ${TRAY_RC_SRCS} )
+		 add_executable( sirikali ${MOC} ${UI} ${SRC} ${TRAY_RC_SRCS} )
+		 set_target_properties( sirikali PROPERTIES COMPILE_FLAGS "-Wextra -Wall -s -fPIC -pedantic")
 	endif()
 endif()
 
@@ -385,10 +368,6 @@ endif()
 
 if( UNIX AND NOT APPLE )
     TARGET_LINK_LIBRARIES( sirikali ${Qt5DBus_LIBRARIES} ${Qt5Widgets_LIBRARIES} ${Qt5Core_LIBRARIES} ${Qt5Widgets_LIBRARIES} ${Qt5Network_LIBRARIES} ${library_pwquality} ${GCRYPT_LIBRARY} mhogomchungu_task lxqt-wallet -L${GCRYPT_LIBRARY_PATH} -Wl,-znow)
-endif()
-
-if(NOT NONETWORKSUPPORT)
-    TARGET_LINK_LIBRARIES(sirikali mhogomchungu_network)
 endif()
 
 message( STATUS "---------------------------------------------------------------------------" )
@@ -420,9 +399,11 @@ if( APPLE )
 	file( COPY icons/256x256/sirikali.icns DESTINATION "sirikali.app/Contents/Resources/" )
 	file( COPY translations/fr_FR.qm DESTINATION "sirikali.app/Contents/Resources/" )
 	file( COPY translations/ru_RU.qm DESTINATION "sirikali.app/Contents/Resources/" )
+	file( COPY translations/es_ES.qm DESTINATION "sirikali.app/Contents/Resources/" )
 	file( COPY translations/en_US.qm DESTINATION "sirikali.app/Contents/Resources/" )
+	file( COPY translations/zh_CN.qm DESTINATION "sirikali.app/Contents/Resources/" )
 
-	#file( COPY translations/de_DE.qm DESTINATION "sirikali.app/Contents/Resources/" )
+	file( COPY translations/de_DE.qm DESTINATION "sirikali.app/Contents/Resources/" )
 	#file( COPY translations/es_MX.qm DESTINATION "sirikali.app/Contents/Resources/" )
 
 	file( COPY changelog DESTINATION "sirikali.app/Contents/Resources/" )
@@ -454,10 +435,12 @@ else()
 
 	install( FILES translations/fr_FR.qm DESTINATION ${CMAKE_INSTALL_DATADIR}/sirikali/translations )
 	install( FILES translations/ru_RU.qm DESTINATION ${CMAKE_INSTALL_DATADIR}/sirikali/translations )
+	install( FILES translations/es_ES.qm DESTINATION ${CMAKE_INSTALL_DATADIR}/sirikali/translations )
 	install( FILES translations/en_US.qm DESTINATION ${CMAKE_INSTALL_DATADIR}/sirikali/translations )
+	install( FILES translations/zh_CN.qm DESTINATION ${CMAKE_INSTALL_DATADIR}/sirikali/translations )
 
 	#install( FILES translations/es_MX.qm DESTINATION ${CMAKE_INSTALL_DATADIR}/sirikali/translations )
-	#install( FILES translations/de_DE.qm DESTINATION ${CMAKE_INSTALL_DATADIR}/sirikali/translations )
+	install( FILES translations/de_DE.qm DESTINATION ${CMAKE_INSTALL_DATADIR}/sirikali/translations )
 
 	install( FILES src/sirikali.1.gz DESTINATION ${CMAKE_INSTALL_DATADIR}/man/man1/ )
 	install( FILES src/sirikali.pkexec.1.gz DESTINATION ${CMAKE_INSTALL_DATADIR}/man/man1/ )

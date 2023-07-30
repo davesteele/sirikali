@@ -213,6 +213,7 @@ int sirikali::run( const QStringList& args,int argc,char * argv[] )
 		QApplication srk( argc,argv ) ;
 
 		srk.setApplicationName( "SiriKali" ) ;
+		srk.setDesktopFileName( "io.github.mhogomchungu.sirikali" ) ;
 
 		return starter( args,srk ).exec() ;
 	}
@@ -324,6 +325,8 @@ void sirikali::closeApplication( int s,const QString& e )
 		}
 	}
 
+	engines::instance().aboutToExit() ;
+
 	m_mountInfo.stop() ;
 }
 
@@ -378,6 +381,8 @@ void sirikali::setUpApp( const QString& volume )
 	m_ui->tableWidget->setMouseTracking( true ) ;
 
 	m_ui->tableWidget->setContextMenuPolicy( Qt::CustomContextMenu ) ;
+
+	//m_ui->tableWidget->horizontalHeader()->setStretchLastSection( true ) ;
 
 	connect( m_ui->tableWidget,&QTableWidget::customContextMenuRequested,[ this ]( QPoint s ){
 

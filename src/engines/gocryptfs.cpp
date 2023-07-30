@@ -65,7 +65,7 @@ static engines::engine::BaseOptions _setOptions()
 
 		s.windowsCanUnlockInReadWriteMode = true ;
 
-		s.createControlStructure = "--create %{createOptions} --cipherPath %{cipherFolder} --cppcryptfsctl-path " + bb ;
+		s.createControlStructure = "--create %{createOptions} --cipherPath %{cipherFolder}" ;
 
 		s.windowsUnMountCommand = QStringList{ aa,"--umount","--mountPath","%{mountPoint}","--cppcryptfsctl-path",bb } ;
 
@@ -249,6 +249,19 @@ void gocryptfs::GUIMountOptions( const engines::engine::mountGUIOptions& s ) con
 	} ;
 
 	e.ShowUI() ;
+}
+
+void gocryptfs::aboutToExit() const
+{
+	if( utility::platformIsWindows() && !m_cppcryptfsPid.isEmpty() ){
+
+		auto id = this->getcppcryptfsPid() ;
+
+		if( m_cppcryptfsPid == id ){
+
+			Task::process::run( m_cppcryptfsctl,QStringList{ "--exit" } ).await() ;
+		}
+	}
 }
 
 const QStringList& gocryptfs::windowsUnmountCommand() const

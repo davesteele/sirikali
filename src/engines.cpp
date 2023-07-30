@@ -40,20 +40,32 @@
 
 static QString _emptyQString ;
 
+static QStringList _windows_search_paths()
+{
+	const auto s = settings::instance().windowsExecutableSearchPath() ;
+
+	return utility::split( s,";" ) ;
+}
+
 static QStringList _system_search_paths()
 {
+	auto env = QProcessEnvironment::systemEnvironment().value( "PATH" ) ;
+
 	if( utility::platformIsWindows() ){
 
 		QStringList m ;
 
-		m.append( settings::instance().windowsExecutableSearchPath() + "/" ) ;
+		for( const auto& it : _windows_search_paths() ){
+
+			m.append( it + "/" ) ;
+		}
 
 		m.append( QDir::currentPath() + "/" ) ;
 
-		return m ;
+		return m + utility::split( env,";" ) ;
 	}
 
-	return { "/usr/local/bin/",
+	return QStringList{ "/usr/local/bin/",
 		 "/usr/local/sbin/",
 		 "/usr/bin/",
 		 "/usr/sbin/",
@@ -62,7 +74,8 @@ static QStringList _system_search_paths()
 		 "/opt/local/bin/",
 		 "/opt/local/sbin/",
 		 "/opt/bin/",
-		 "/opt/sbin/" } ;
+		 "/opt/sbin/",
+		 "/opt/homebrew/bin/" } + utility::split( env,":" ) ;
 }
 
 static QStringList _search_path_0( const QString& e )
@@ -89,7 +102,11 @@ static QStringList _search_path( const QStringList& m )
 
 		auto x = _search_path_0( a + "\\bin\\" ) ;
 		x += _search_path_0( QDir().currentPath() + "\\" ) ;
-		x += _search_path_0( settings::instance().windowsExecutableSearchPath() + "\\" ) ;
+
+		for( const auto& it : _windows_search_paths() ){
+
+			x += _search_path_0( it + "\\" ) ;
+		}
 
 		for( const auto& it : m ){
 
@@ -150,11 +167,21 @@ static QString _executableFullPath( const QString& f,Function function )
 
 		if( !it.isEmpty() ){
 
-			exe = it + e ;
+			if( it.endsWith( '/' ) ){
 
-			if( QFile::exists( exe ) ){
+				exe = it + e ;
 
-				return exe ;
+				if( QFile::exists( exe ) ){
+
+					return exe ;
+				}
+			}else{
+				exe = it + "/" + e ;
+
+				if( QFile::exists( exe ) ){
+
+					return exe ;
+				}
 			}
 		}
 	}
@@ -181,7 +208,12 @@ QString engines::executableNotEngineFullPath( const QString& e )
 
 			QStringList m ;
 
-			m.append( settings::instance().windowsExecutableSearchPath() + "/" ) ;
+			for( const auto& it : _windows_search_paths() ){
+
+				m.append( it + "/" ) ;
+				m.append( it + "/bin/" ) ;
+			}
+
 			m.append( QDir::currentPath() + "/" ) ;
 
 			return m ;
@@ -567,6 +599,11 @@ bool engines::engine::unmountVolume( const engines::engine::exe_args_const& exe,
 engines::engine::status engines::engine::unmount( const engines::engine::unMount& e ) const
 {
 	auto cmd = this->unMountCommand( e.mountPoint ) ;
+
+	if( cmd.error != engines::engine::status::success ){
+
+		return cmd.error ;
+	}
 
 	if( this->unmountVolume( cmd,false ) ){
 
@@ -974,6 +1011,10 @@ bool engines::engine::takesTooLongToUnlock() const
 	return m_Options.takesTooLongToUnlock ;
 }
 
+void engines::engine::aboutToExit() const
+{
+}
+
 QByteArray engines::engine::prepareBackend() const
 {
 	return {} ;
@@ -1150,7 +1191,14 @@ engines::engine::exe_args engines::engine::unMountCommand( const engines::engine
 
 				return { "umount",{ e.mountPath() } } ;
 			}else{
-				return { engines::engine::fuserMountPath(),{ "-u",e.mountPath() } } ;
+				auto fuserMount = engines::engine::fuserMountPath() ;
+
+				if( fuserMount.isEmpty() ){
+
+					return { engines::engine::status::fuserMountNotFound } ;
+				}else{
+					return { fuserMount,{ "-u",e.mountPath() } } ;
+				}
 			}
 		}else{
 			return _replace_opts( m_Options.unMountCommand ) ;
@@ -1503,6 +1551,14 @@ QStringList engines::enginesWithConfigFile() const
 	} ) ;
 }
 
+void engines::aboutToExit() const
+{
+	for( const auto& it : m_backends ){
+
+		it->aboutToExit() ;
+	}
+}
+
 const std::vector< engines::engine::Wrapper >& engines::supportedEngines() const
 {
 	return m_backendWrappers ;
@@ -1788,6 +1844,10 @@ QString engines::engine::cmdStatus::toString() const
 	case engines::engine::status::backendRequiresPassword :
 
 		return QObject::tr( "Backend Requires A Password." ) ;
+
+	case engines::engine::status::fuserMountNotFound :
+
+		return QObject::tr( "Failed To UnMount Because \"fusermount\" Executable Could Not Be Found." ) ;
 
 	case engines::engine::status::badPassword :
 

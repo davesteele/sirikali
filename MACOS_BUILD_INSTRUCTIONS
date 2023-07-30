@@ -5,7 +5,10 @@ Below are instructions on how to build SiriKali on MacOS.
     git clone https://github.com/mhogomchungu/sirikali.git
 
     When you run git the first time on MacOS, you will be prompted to install developer tools (which includes git) and be guided through it.
-
+    
+    1b. Go to the cloned folder:
+    cd sirikali
+    
 2.  Install homebrew (https://brew.sh/)
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
@@ -16,27 +19,15 @@ Below are instructions on how to build SiriKali on MacOS.
     brew install --cask macfuse
 
 5.  If your chosen encrypted filesystem is not installed select one (or more) of the following: 
-5.1 # Encfs support
-    brew install encfs
-5.2 # Securefs support
-    brew install securefs
-5.3 # Gocryptfs support
-    'brew install' not supported by homebrew since gocryptfs relies on Macfuse which is no longer open source
 
-    # Alternative Gocryptfs install (reference - https://github.com/rfjakob/gocryptfs/issues/556#issuecomment-848076752)
-    brew install go
-
-    git clone https://github.com/rfjakob/gocryptfs.git
-    cd gocryptfs; ./build-without-openssl.bash
-    
-    # Ensure SiriKali can find gocryptfs (due to Go setting ~/go as $gopath environment variable) 
-    sudo ln -s ~/go/bin/gocryptfs /opt/local/bin
-
-    # Back to SiriKali directory
-    cd ..
+    # Easy alternative to install all 3:
+    brew install gromgit/fuse/gocryptfs-mac gromgit/fuse/encfs-mac  gromgit/fuse/securefs-mac
 
 6.  # You need to specify the path to the qt5 you installed through homebrew:
-    echo 'export PATH="/opt/homebrew/opt/qt@5/bin:$PATH"' >> ~/.zshrc/; source ~/.zshrc
+    echo 'export PATH="/opt/homebrew/opt/qt@5/bin:$PATH"' >> ~/.zshrc; source ~/.zshrc
+    
+    6b. Tell cmake where to find qt:
+    export CMAKE_PREFIX_PATH=/opt/homebrew/Cellar/qt@5/5.15.5/
 
 7.  # Create a build diretory and cd into it
     mkdir build; cd build
