@@ -4,7 +4,7 @@ Priority: optional
 Maintainer: David Steele <steele@debian.org>
 Build-Depends: debhelper-compat (= 13),
                cmake,
-               pkg-config,
+               pkgconf,
                libgcrypt20-dev,
                libsecret-1-dev,
                qtbase5-dev,
