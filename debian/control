@@ -11,7 +11,7 @@ Build-Depends: debhelper-compat (= 13),
                qtbase5-dev-tools,
                chrpath,
                bzip2,
-Standards-Version: 4.5.0
+Standards-Version: 4.6.2
 Rules-Requires-Root: no
 Homepage: https://mhogomchungu.github.io/sirikali
 Vcs-Git: https://github.com/davesteele/sirikali.git -b debian
