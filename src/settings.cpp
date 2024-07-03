@@ -53,6 +53,7 @@
 static QString _configPath()
 {
 #if QT_VERSION >= QT_VERSION_CHECK( 5,6,0 )
+
 	auto s = QStandardPaths::standardLocations( QStandardPaths::ConfigLocation ) ;
 
 	if( s.isEmpty() ){
@@ -303,6 +304,31 @@ QString settings::windowsExecutableSearchPath()
 	return m_settings.value( "WindowsExecutableSearchPath" ).toString() ;
 }
 
+QString settings::executableSearchPath()
+{
+	if( !m_settings.contains( "ExecutableSearchPath" ) ){
+
+		m_settings.setValue( "ExecutableSearchPath",this->defaultExecutableSearchPath() ) ;
+	}
+
+	return m_settings.value( "ExecutableSearchPath" ).toString() ;
+}
+
+QString settings::defaultExecutableSearchPath()
+{
+	if( utility::platformIsOSX() ){
+
+		return "/opt/homebrew/bin" ;
+	}else{
+		return QDir::homePath() + "/.bin" ;
+	}
+}
+
+void settings::setExecutableSearchPath( const QString& e )
+{
+	m_settings.setValue( "ExecutableSearchPath",e ) ;
+}
+
 int settings::windowsPbkdf2Interations()
 {
 	if( !m_settings.contains( "WindowsPbkdf2Interations" ) ){
@@ -544,6 +570,18 @@ QString settings::fileManager()
 	}
 }
 
+QStringList settings::openWith()
+{
+	if( !m_settings.contains( "FolderOpenWith" ) ){
+
+		m_settings.setValue( "FolderOpenWith",QString() ) ;
+	}
+
+	auto m = m_settings.value( "FolderOpenWith" ).toString() ;
+
+	return utility::splitPreserveQuotes( m ) ;
+}
+
 static void _set_mount_default( settings& s )
 {
 	QSettings& m = s.backend() ;
@@ -601,19 +639,44 @@ QString settings::ConfigLocation()
 		return QDir().currentPath() + "/local" ;
 	}
 
-	if( !m_settings.contains( "ConfigLocation" ) ){
+	if( !m_settings.contains( "AppDataLocation" ) ){
 
-		auto m = QStandardPaths::standardLocations( QStandardPaths::ConfigLocation ) ;
+		auto New = QStandardPaths::standardLocations( QStandardPaths::AppDataLocation ) ;
+		auto old = QStandardPaths::standardLocations( QStandardPaths::ConfigLocation ) ;
 
-		if( !m.isEmpty() ){
+		QString newPath ;
+		QString oldPath ;
 
-			m_settings.setValue( "ConfigLocation",m.first() + "/SiriKali/" ) ;
+		if( New.isEmpty() ){
+
+			//Should not get here according to Qt documentation
+			newPath = QDir::homePath() + "/.config/SiriKali/" ;
 		}else{
-			m_settings.setValue( "ConfigLocation",QDir::homePath() + "/.config/SiriKali/" ) ;
+			newPath = New.first() ;
 		}
+
+		if( old.isEmpty() ){
+
+			//Should not get here according to Qt documentation
+			oldPath = QDir::homePath() + "/.config/SiriKali/" ;
+		}else{
+			oldPath = old.first() + "/SiriKali/" ;
+		}
+
+		utility::moveFolder( oldPath,newPath,[]( bool folder,const QString& e ){
+
+			if( folder ){
+
+				return true ;
+			}else{
+				return e != "SiriKali.conf" ;
+			}
+		} ) ;
+
+		m_settings.setValue( "AppDataLocation",newPath ) ;
 	}
 
-	return m_settings.value( "ConfigLocation" ).toString() ;
+	return m_settings.value( "AppDataLocation" ).toString() ;
 }
 
 QString settings::environmentalVariableVolumeKey()
@@ -715,12 +778,23 @@ bool settings::readFavorites( QMenu * m )
 {
 	m->clear() ;
 
-	auto _add_action = [ m ]( const QString& e,const QString& s ){
+	auto _enable_entry = []( const QString& e ){
+
+		if( e.startsWith( "sshfs ",Qt::CaseInsensitive ) ){
+
+			return true ;
+		}else{
+			return QFile::exists( e ) ;
+		}
+	} ;
+
+	auto _add_action = [ m ]( const QString& e,const QString& s,bool enable = true ){
 
 		auto ac = new QAction( m ) ;
 
 		ac->setText( e ) ;
 		ac->setObjectName( s ) ;
+		ac->setEnabled( enable ) ;
 
 		return ac ;
 	} ;
@@ -762,7 +836,7 @@ bool settings::readFavorites( QMenu * m )
 
 			const auto& e = it.volumePath + "\n" + it.mountPointPath ;
 
-			m->addAction( _add_action( e,e ) ) ;
+			m->addAction( _add_action( e,e,_enable_entry( it.volumePath ) ) ) ;
 			m->addSeparator() ;
 		}
 	}else{
@@ -770,7 +844,7 @@ bool settings::readFavorites( QMenu * m )
 
 			const auto& e = it.volumePath ;
 
-			m->addAction( _add_action( e,e ) ) ;
+			m->addAction( _add_action( e,e,_enable_entry( it.volumePath ) ) ) ;
 		}
 	}
 

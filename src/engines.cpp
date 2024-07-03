@@ -35,6 +35,8 @@
 #include "win.h"
 #include "engines/options.h"
 
+#include "processManager.h"
+
 #include <QCoreApplication>
 #include <QJsonDocument>
 
@@ -45,6 +47,38 @@ static QStringList _windows_search_paths()
 	const auto s = settings::instance().windowsExecutableSearchPath() ;
 
 	return utility::split( s,";" ) ;
+}
+
+static void _append( QStringList& )
+{
+}
+
+template< typename First,typename ... Rest >
+void _append( QStringList& m,const First& f,Rest&& ... r )
+{
+	m.append( f ) ;
+	_append( m,std::forward< Rest >( r ) ... ) ;
+}
+
+static QStringList _defaultPaths()
+{
+	QStringList s ;
+
+	_append( s,
+		 settings::instance().executableSearchPath(),
+		 "/usr/local/bin/",
+		 "/usr/local/sbin/",
+		 "/usr/bin/",
+		 "/usr/sbin/",
+		 "/bin/",
+		 "/sbin/",
+		 "/opt/local/bin/",
+		 "/opt/local/sbin/",
+		 "/opt/bin/",
+		 "/opt/sbin/",
+		 "/opt/homebrew/bin/" ) ;
+
+	return s ;
 }
 
 static QStringList _system_search_paths()
@@ -63,19 +97,9 @@ static QStringList _system_search_paths()
 		m.append( QDir::currentPath() + "/" ) ;
 
 		return m + utility::split( env,";" ) ;
+	}else{
+		return _defaultPaths() + utility::split( env,":" ) ;
 	}
-
-	return QStringList{ "/usr/local/bin/",
-		 "/usr/local/sbin/",
-		 "/usr/bin/",
-		 "/usr/sbin/",
-		 "/bin/",
-		 "/sbin/",
-		 "/opt/local/bin/",
-		 "/opt/local/sbin/",
-		 "/opt/bin/",
-		 "/opt/sbin/",
-		 "/opt/homebrew/bin/" } + utility::split( env,":" ) ;
 }
 
 static QStringList _search_path_0( const QString& e )
@@ -508,6 +532,19 @@ engines::engine::args engines::engine::command( const QByteArray& password,
 	}
 }
 
+static bool _wrong_password( const QString& e,const QStringList& s )
+{
+	for( const auto& m : s ){
+
+		if( e.contains( m ) ){
+
+			return true ;
+		}
+	}
+
+	return false ;
+}
+
 engines::engine::status engines::engine::errorCode( const QString& e,const QString&,int s ) const
 {
 	Q_UNUSED( s )
@@ -520,7 +557,7 @@ engines::engine::status engines::engine::errorCode( const QString& e,const QStri
 
 		return engines::engine::status::failedToLoadWinfsp ;
 
-	}else if( e.contains( this->incorrectPasswordText() ) ){
+	}else if( _wrong_password( e,this->incorrectPasswordText() ) ){
 
 		return engines::engine::status::badPassword ;
 	}else{
@@ -537,6 +574,11 @@ volumeInfo::List engines::engine::mountInfo( const volumeInfo::List& e ) const
 {
 	Q_UNUSED( e )
 	return {} ;
+}
+
+bool engines::engine::canShowVolumeProperties() const
+{
+	return true ;
 }
 
 Task::future< QString >& engines::engine::volumeProperties( const QString& cipherFolder,
@@ -620,6 +662,30 @@ engines::engine::status engines::engine::unmount( const engines::engine::unMount
 		}
 
 		return engines::engine::status::failedToUnMount ;
+	}
+}
+
+engines::engine::cmdStatus engines::engine::commandStatus( const engines::engine::commandStatusOpts& e ) const
+{
+	const auto& engine = *this ;
+
+	if( e.success() ){
+
+		return { engines::engine::status::success,engine } ;
+	}else{
+		if( utility::platformIsWindows() ){
+
+			if( processManager::backEndTimedOut( e.stdOut() ) ){
+
+				return { engines::engine::status::backendTimedOut,engine } ;
+			}
+		}
+
+		auto ss = e.stdError().isEmpty() ? e.stdOut() : e.stdError() ;
+
+		auto n = engine.errorCode( ss,ss,e.exitCode() ) ;
+
+		return { n,engine,ss } ;
 	}
 }
 
@@ -830,7 +896,14 @@ engines::exeFullPath engines::engine::m_exeJavaFullPath( [](){
 
 engines::exeFullPath engines::engine::m_exeFuserMount( [](){
 
-	return engines::executableNotEngineFullPath( "fusermount" ) ;
+	auto e = engines::executableNotEngineFullPath( "fusermount3" ) ;
+
+	if( e.isEmpty() ){
+
+		e = engines::executableNotEngineFullPath( "fusermount" ) ;
+	}
+
+	return e ;
 } ) ;
 
 static std::function< QString() > _exe_full_path( const QStringList& exe,const engines::engine& engine )
@@ -1141,7 +1214,7 @@ const QString& engines::engine::createControlStructure() const
 	return m_Options.createControlStructure ;
 }
 
-const QString& engines::engine::incorrectPasswordText() const
+const QStringList& engines::engine::incorrectPasswordText() const
 {
 	return m_Options.incorrectPasswordText ;
 }
