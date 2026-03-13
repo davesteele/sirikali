@@ -4,7 +4,7 @@ set -e
 
 case "$1" in
     upgrade)
-        if pidof sirikali ; then
+        if command -v pidof >/dev/null 2>&1 && pidof sirikali ; then
             echo "********************************************"
             echo "Sirikali must not be running when upgrading!"
             echo "********************************************"
