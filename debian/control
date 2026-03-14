@@ -1,7 +1,7 @@
 Source: sirikali
 Section: admin
 Priority: optional
-Maintainer: David Steele <steele@debian.org>
+Maintainer: Debian QA Group <packages@qa.debian.org>
 Build-Depends: debhelper-compat (= 13),
                cmake,
                pkgconf,

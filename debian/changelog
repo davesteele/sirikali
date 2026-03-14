@@ -1,3 +1,9 @@
+sirikali (1.6.0-2) unstable; urgency=medium
+
+  * Orphaning
+
+ -- David Steele <steele@debian.org>  Fri, 13 Mar 2026 22:55:24 -0400
+
 sirikali (1.6.0-1) unstable; urgency=medium
 
   * New upstream version.
